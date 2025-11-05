@@ -230,10 +230,18 @@ export default function JarPublicPage() {
 
           for (const lg of logs) {
             try {
+              // Преобразуем readonly topics в ожидаемый tuple
+              const topics =
+                (lg.topics && lg.topics.length > 0
+                  ? ([lg.topics[0] as `0x${string}`, ...(lg.topics.slice(1) as `0x${string}`[])] as
+                      [] | [`0x${string}`, ...`0x${string}`[]])
+                  : ([] as []));
+              const data = ((lg as any).data ?? '0x') as `0x${string}`;
+
               const ev = decodeEventLog({
                 abi: TIPJAR_ABI as any,
-                data: lg.data,
-                topics: lg.topics as readonly Hex[],
+                data,
+                topics,
               });
               if (ev.eventName !== 'Tipped') continue;
 
@@ -351,7 +359,7 @@ export default function JarPublicPage() {
         <p className="mb-3 text-sm text-neutral-400">
           Network: 8453 (Base Mainnet)
           <br />
-          Jar:{' '}
+          Jar{' '}
           <span title={jar} className="inline-block max-w-[52ch] truncate align-bottom">
             {jar}
           </span>
