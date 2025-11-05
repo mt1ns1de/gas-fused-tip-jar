@@ -37,16 +37,28 @@ export async function createJar(params: { maxGasPriceWei: bigint }) {
 
     // Парсим событие JarCreated
     let jar: `0x${string}` | undefined;
+
     for (const log of receipt.logs) {
       try {
+        // Преобразуем readonly topics -> ожидаемый tuple [] | [sig, ...args]
+        const topics =
+          (log.topics && log.topics.length > 0
+            ? ([log.topics[0] as `0x${string}`, ...(log.topics.slice(1) as `0x${string}`[])] as
+                [] | [`0x${string}`, ...`0x${string}`[]])
+            : ([] as []));
+
+        // Подстрахуем data
+        const data = ((log as any).data ?? '0x') as `0x${string}`;
+
         const parsed = decodeEventLog({
-          abi: FACTORY_ABI as any,
-          data: log.data as Hex,
-          topics: log.topics as readonly Hex[],
-        });
-        if (parsed?.eventName === 'JarCreated') {
-          const args: any = parsed.args;
-          if (args?.jar) {
+          abi: FACTORY_ABI,
+          data,
+          topics,
+        }) as { eventName: string; args: any };
+
+        if (parsed.eventName === 'JarCreated') {
+          const args = parsed.args || {};
+          if (args.jar) {
             jar = args.jar as `0x${string}`;
             break;
           }
@@ -73,7 +85,7 @@ export async function withdrawFromJar(jarAddress: `0x${string}`) {
       abi: TIPJAR_ABI as any,
       address: jarAddress,
       functionName: 'withdraw',
-      args: [],
+      args: [] as const,
       chainId: BASE_MAINNET_ID,
     });
 
