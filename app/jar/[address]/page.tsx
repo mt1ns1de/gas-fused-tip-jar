@@ -238,11 +238,13 @@ export default function JarPublicPage() {
                   : ([] as []));
               const data = ((lg as any).data ?? '0x') as `0x${string}`;
 
+              // Явная аннотация типа результата, чтобы TS не считал unknown
               const ev = decodeEventLog({
-                abi: TIPJAR_ABI as any,
+                abi: TIPJAR_ABI,
                 data,
                 topics,
-              });
+              }) as { eventName: string; args: any };
+
               if (ev.eventName !== 'Tipped') continue;
 
               const args: any = ev.args || {};
