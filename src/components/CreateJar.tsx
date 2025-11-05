@@ -158,9 +158,9 @@ export default function CreateJar({ onCreated }: Props) {
 
       {/* Hint */}
       <p className="text-center text-sm text-neutral-400">
-        Current base fee:{' '}
+        Current base fee{' '}
         <span className="tabular-nums">{Number(current).toFixed(2)}</span>{' '}
-        gwei. Your cap:{' '}
+        gwei. Your cap{' '}
         <span className="tabular-nums">{Number(inputGwei || 0).toFixed(2)} gwei</span>{' '}
         (<span className="tabular-nums">{capWeiBigInt ? `${formatEther(capWeiBigInt)} ETH` : '0'}</span>).
         Transactions will only proceed if the network gas price is ≤ your cap.
@@ -231,7 +231,7 @@ export default function CreateJar({ onCreated }: Props) {
         </div>
       )}
 
-      {/* Celebration / Share modal (без кнопки Share — используем только Copy/Open) */}
+      {/* Celebration / Share modal */}
       {showCelebration && (
         <ShareModal
           open={showCelebration}
@@ -243,9 +243,6 @@ export default function CreateJar({ onCreated }: Props) {
               ? (typeof window !== 'undefined' ? `${window.location.origin}${publicPage}` : publicPage)
               : undefined
           }
-          actions={[
-            publicPage ? { label: 'Open public page', href: publicPage, target: '_self' } : undefined,
-          ].filter(Boolean) as { label: string; href: string; target?: '_blank' | '_self' }[]}
         />
       )}
 
