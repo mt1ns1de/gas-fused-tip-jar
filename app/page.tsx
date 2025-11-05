@@ -72,6 +72,7 @@ export default function Page() {
           address: v as `0x${string}`,
           abi: TIPJAR_ABI as any,
           functionName: 'maxGasPriceWei',
+          args: [] as const,
         });
         if (!alive) return;
         setIsValidJar(true);
