@@ -1,10 +1,29 @@
 "use client";
 
 import { writeContract, waitForTransactionReceipt, switchChain } from "@wagmi/core";
+import { getPublicClient } from "wagmi/actions";
 import { base } from "viem/chains";
 import { config } from "@/lib/wagmi";
 import { TIPJAR_ABI } from "@/lib/abiTipJar";
 import { type Hex } from "viem";
+
+/** маппер ошибок → понятные тексты */
+function mapError(e: unknown): string {
+  const raw = String((e as any)?.shortMessage || (e as any)?.message || e || "");
+  const msg = raw.toLowerCase();
+
+  if (msg.includes("user rejected")) return "Подпись отклонена в кошельке.";
+  if (msg.includes("insufficient funds") || msg.includes("insufficient balance"))
+    return "Недостаточно средств для суммы и комиссии.";
+  if (msg.includes("wrong chain") || msg.includes("chain mismatch") || msg.includes("chain id"))
+    return "Переключитесь на Base Mainnet (8453) и повторите.";
+  if (msg.includes("max fee") || msg.includes("priority fee"))
+    return "Некорректная комиссия. Проверьте настройки газа.";
+  if (msg.includes("timeout") || msg.includes("no backend is currently healthy"))
+    return "Провайдер сети нестабилен. Попробуйте чуть позже.";
+
+  return "Не удалось отправить чаевые. Попробуйте ещё раз.";
+}
 
 /**
  * Универсальный сигнатурный адаптер.
@@ -34,22 +53,28 @@ export async function sendTip(params: {
       /* ignore — попробуем всё равно */
     }
 
-    const txHash = await writeContract(config, {
+    // ✅ симуляция перед сабмитом — заранее ловим большинство ошибок
+    const publicClient = getPublicClient(config);
+    const sim = await publicClient.simulateContract({
       address,
       abi: TIPJAR_ABI,
       functionName: "tip",
       args: [params.message ?? ""],
       value,
-      chainId: 8453 as const,
+      chainId: base.id,
+      account: undefined,
     });
 
+    // сабмитим exactly то, что вернула симуляция
+    const txHash = await writeContract(config, sim.request);
     const receipt = await waitForTransactionReceipt(config, { hash: txHash as Hex });
+
     return {
       success: true,
       txHash: txHash as string,
       explorerUrl: `https://basescan.org/tx/${txHash}`,
     } as const;
   } catch (e: any) {
-    return { success: false, error: e?.shortMessage || e?.message || "Failed to send tip" } as const;
+    return { success: false, error: mapError(e) } as const;
   }
 }
