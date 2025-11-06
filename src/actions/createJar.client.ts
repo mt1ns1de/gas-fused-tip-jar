@@ -2,6 +2,8 @@
 
 import { writeContract, waitForTransactionReceipt } from '@wagmi/core';
 import { decodeEventLog, type Hex } from 'viem';
+import { base } from 'viem/chains';
+import { switchChain, getChainId } from 'wagmi/actions';
 import { config } from '@/lib/wagmi';
 
 // ABI фабрики из .env.local (одна строка JSON)
@@ -18,11 +20,32 @@ const FACTORY_ADDRESS = process.env
 
 const BASE_MAINNET_ID = 8453 as const;
 
+async function ensureBase(): Promise<boolean> {
+  try {
+    if (getChainId(config) === base.id) return true;
+  } catch { /* ignore */ }
+  try {
+    await switchChain(config, { chainId: base.id });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Создание банки через фабрику */
 export async function createJar(params: { maxGasPriceWei: bigint }) {
   try {
     if (!FACTORY_ADDRESS || !FACTORY_ABI?.length) {
       return { success: false, error: 'Factory config is missing' } as const;
+    }
+
+    // 🔒 Гарантируем сеть Base непосредственно перед транзакцией
+    const ok = await ensureBase();
+    if (!ok) {
+      return {
+        success: false,
+        error: 'Please switch your wallet to Base Mainnet (8453) and try again.',
+      } as const;
     }
 
     const hash = await writeContract(config, {
@@ -37,17 +60,14 @@ export async function createJar(params: { maxGasPriceWei: bigint }) {
 
     // Парсим событие JarCreated
     let jar: `0x${string}` | undefined;
-
     for (const log of receipt.logs) {
       try {
-        // Преобразуем readonly topics -> ожидаемый tuple [] | [sig, ...args]
         const topics =
           (log.topics && log.topics.length > 0
             ? ([log.topics[0] as `0x${string}`, ...(log.topics.slice(1) as `0x${string}`[])] as
                 [] | [`0x${string}`, ...`0x${string}`[]])
             : ([] as []));
 
-        // Подстрахуем data
         const data = ((log as any).data ?? '0x') as `0x${string}`;
 
         const parsed = decodeEventLog({
@@ -80,6 +100,9 @@ export async function withdrawFromJar(jarAddress: `0x${string}`) {
     const TIPJAR_ABI = [
       { type: 'function', name: 'withdraw', inputs: [], outputs: [], stateMutability: 'nonpayable' },
     ] as const;
+
+    // Тоже на всякий случай — на Base
+    await ensureBase();
 
     const txHash = await writeContract(config, {
       abi: TIPJAR_ABI as any,
