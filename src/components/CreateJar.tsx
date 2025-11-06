@@ -3,6 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAccount, useChainId, usePublicClient } from 'wagmi';
 import { type Hex, formatGwei, formatEther, parseGwei } from 'viem';
+import { base } from 'viem/chains';
+import { switchChain, getChainId } from 'wagmi/actions';
+import { config } from '@/lib/wagmi';
+
 import { createJar } from '@/actions/createJar.client';
 import ShareModal from '@/components/ShareModal';
 import JarVisual from '@/components/JarVisual';
@@ -28,6 +32,23 @@ export default function CreateJar({ onCreated }: Props) {
 
   // celebration modal
   const [showCelebration, setShowCelebration] = useState(false);
+
+  // ===== helpers =====
+  async function ensureBase(): Promise<boolean> {
+    try {
+      // если уже на Base — ничего не делаем
+      if (getChainId(config) === base.id) return true;
+    } catch {
+      /* ignore */
+    }
+    try {
+      await switchChain(config, { chainId: base.id });
+      return true;
+    } catch {
+      // некоторые кошельки (редко) не дают переключать сеть программно
+      return false;
+    }
+  }
 
   // fetch current gas (и периодически обновляем)
   useEffect(() => {
@@ -60,8 +81,8 @@ export default function CreateJar({ onCreated }: Props) {
   }, [inputGwei]);
 
   const multiplierClick = (mul: number) => {
-    const base = current || 0;
-    const next = (base * mul).toFixed(2);
+    const baseFee = current || 0;
+    const next = (baseFee * mul).toFixed(2);
     setInputGwei(next);
   };
 
@@ -73,8 +94,30 @@ export default function CreateJar({ onCreated }: Props) {
     setErr(null);
     setTxHash(null);
     setJarAddress(null);
+
     try {
-      const res = await createJar({ maxGasPriceWei: capWeiBigInt });
+      // 1) гарантируем сеть Base
+      const ok = await ensureBase();
+      if (!ok) {
+        setErr('Please switch your wallet to Base Mainnet (8453) and try again.');
+        return;
+      }
+
+      // 2) вызов
+      const attempt = async () => createJar({ maxGasPriceWei: capWeiBigInt });
+
+      let res = await attempt();
+
+      // 3) если кошелёк внезапно был не на той сети — переключаем и ретраим один раз
+      if (!res?.success && res?.error && /does not match the target chain|ChainMismatchError/i.test(res.error)) {
+        const switched = await ensureBase();
+        if (!switched) {
+          setErr('Please switch your wallet to Base Mainnet (8453) and try again.');
+          return;
+        }
+        res = await attempt();
+      }
+
       if (!res?.success) {
         // если юзер отменил — молчим
         if (res?.error && /User rejected/i.test(res.error)) {
@@ -83,6 +126,7 @@ export default function CreateJar({ onCreated }: Props) {
         setErr(res?.error || 'Failed to deploy. Please try again.');
         return;
       }
+
       if (res.txHash) setTxHash(res.txHash as Hex);
       if (res.jarAddress) {
         setJarAddress(res.jarAddress);
@@ -90,7 +134,6 @@ export default function CreateJar({ onCreated }: Props) {
           localStorage.setItem('lastJarAddress', res.jarAddress);
         } catch {}
         onCreated?.(res.jarAddress as `0x${string}`);
-        // Показать «банка создана!»
         setShowCelebration(true);
       }
     } catch (e: any) {
@@ -178,14 +221,14 @@ export default function CreateJar({ onCreated }: Props) {
         </button>
       </div>
 
-      {/* Error (скрываем «User rejected») */}
+      {/* Error */}
       {err && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
           {err}
         </div>
       )}
 
-      {/* Result (кнопки) */}
+      {/* Result */}
       {jarAddress && (
         <div className="rounded-xl border border-white/10 bg-white/5 p-4">
           <div className="mb-2 text-center font-semibold">Jar created!</div>
@@ -246,7 +289,7 @@ export default function CreateJar({ onCreated }: Props) {
         />
       )}
 
-      {/* декоративная банка для красоты (небольшая) */}
+      {/* декоративная банка */}
       <div className="pt-2">
         <JarVisual progress={0.65} pulse size={110} />
       </div>
