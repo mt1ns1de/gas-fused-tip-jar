@@ -3,7 +3,7 @@
 import { writeContract, waitForTransactionReceipt } from '@wagmi/core';
 import { decodeEventLog, type Hex } from 'viem';
 import { base } from 'viem/chains';
-import { switchChain, getChainId } from 'wagmi/actions';
+import { getAccount, switchChain } from 'wagmi/actions';
 import { config } from '@/lib/wagmi';
 
 // ABI фабрики из .env.local (одна строка JSON)
@@ -18,18 +18,24 @@ const FACTORY_ABI: any = (() => {
 const FACTORY_ADDRESS = process.env
   .NEXT_PUBLIC_FACTORY_BASE_MAINNET as `0x${string}`;
 
-const BASE_MAINNET_ID = 8453 as const;
-
-async function ensureBase(): Promise<boolean> {
-  try {
-    if (getChainId(config) === base.id) return true;
-  } catch { /* ignore */ }
-  try {
-    await switchChain(config, { chainId: base.id });
-    return true;
-  } catch {
-    return false;
+async function ensureBaseOrFail(): Promise<{ address: `0x${string}` }> {
+  const acc0 = getAccount(config);
+  if (acc0.status !== 'connected' || !acc0.address) {
+    throw new Error('Connect your wallet first.');
   }
+  if (acc0.chainId !== base.id) {
+    await switchChain(config, { chainId: base.id });
+    // подождём фактического переключения (кошелёк может лагать)
+    for (let i = 0; i < 6; i++) {
+      await new Promise((r) => setTimeout(r, 250));
+      const acc = getAccount(config);
+      if (acc.chainId === base.id) {
+        return { address: acc.address as `0x${string}` };
+      }
+    }
+    throw new Error('Please switch your wallet to Base Mainnet (8453) and try again.');
+  }
+  return { address: acc0.address as `0x${string}` };
 }
 
 /** Создание банки через фабрику */
@@ -39,22 +45,31 @@ export async function createJar(params: { maxGasPriceWei: bigint }) {
       return { success: false, error: 'Factory config is missing' } as const;
     }
 
-    // 🔒 Гарантируем сеть Base непосредственно перед транзакцией
-    const ok = await ensureBase();
-    if (!ok) {
-      return {
-        success: false,
-        error: 'Please switch your wallet to Base Mainnet (8453) and try again.',
-      } as const;
-    }
+    const { address: account } = await ensureBaseOrFail();
 
-    const hash = await writeContract(config, {
-      abi: FACTORY_ABI,
-      address: FACTORY_ADDRESS,
-      functionName: 'createJar',
-      args: [params.maxGasPriceWei],
-      chainId: BASE_MAINNET_ID,
-    });
+    const attempt = async () =>
+      writeContract(config, {
+        abi: FACTORY_ABI,
+        address: FACTORY_ADDRESS,
+        functionName: 'createJar',
+        args: [params.maxGasPriceWei],
+        account,
+        chainId: base.id, // 🔒 явно указываем целевую сеть
+      });
+
+    let hash: Hex;
+    try {
+      hash = (await attempt()) as Hex;
+    } catch (e: any) {
+      const msg = String(e?.message || '');
+      // если вдруг кошелёк вернул mismatch — пробуем ещё раз после повторного ensure
+      if (/ChainMismatch|does not match the target chain/i.test(msg)) {
+        await ensureBaseOrFail();
+        hash = (await attempt()) as Hex;
+      } else {
+        throw e;
+      }
+    }
 
     const receipt = await waitForTransactionReceipt(config, { hash });
 
@@ -101,15 +116,15 @@ export async function withdrawFromJar(jarAddress: `0x${string}`) {
       { type: 'function', name: 'withdraw', inputs: [], outputs: [], stateMutability: 'nonpayable' },
     ] as const;
 
-    // Тоже на всякий случай — на Base
-    await ensureBase();
+    const { address: account } = await ensureBaseOrFail();
 
     const txHash = await writeContract(config, {
       abi: TIPJAR_ABI as any,
       address: jarAddress,
       functionName: 'withdraw',
       args: [] as const,
-      chainId: BASE_MAINNET_ID,
+      account,
+      chainId: base.id,
     });
 
     await waitForTransactionReceipt(config, { hash: txHash });
