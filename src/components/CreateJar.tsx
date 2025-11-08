@@ -22,7 +22,7 @@ export default function CreateJar({ onCreated }: Props) {
   const publicClient = usePublicClient();
 
   // UI state
-  const [inputGwei, setInputGwei] = useState<string>(''); // авто выставим Medium при первом фетче
+  const [inputGwei, setInputGwei] = useState<string>(''); // заполним после первого фетча (Medium)
   const [netGasGwei, setNetGasGwei] = useState<string>('0');
   const [usingFallback, setUsingFallback] = useState<boolean>(false);
   const [busy, setBusy] = useState(false);
@@ -149,12 +149,13 @@ export default function CreateJar({ onCreated }: Props) {
 
   /** ===== RENDER ===== */
   return (
-    // оборачиваем центральную колонку, чтобы якорить левую панель
+    // обёртка для абсолютной левой панели
     <div className="relative">
-      {/* LEFT FLOATING PANEL — shows in empty space on large screens */}
+      {/* LEFT FLOATING PANEL */}
       <div className="pointer-events-auto absolute -left-[320px] top-2 hidden w-[280px] lg:block">
         <button
           type="button"
+          aria-expanded={showHow}
           onClick={() => setShowHow((s) => !s)}
           className="w-full select-none rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-neutral-200 shadow-sm transition hover:bg-white/10"
         >
@@ -164,12 +165,16 @@ export default function CreateJar({ onCreated }: Props) {
           </span>
         </button>
 
+        {/* Плавное раскрытие без рывков: паддинг в анимируемом контейнере */}
         <div
-          className={`overflow-hidden transition-all duration-300 ${
-            showHow ? 'max-h-[560px] opacity-100 translate-y-0' : 'max-h-0 opacity-0 -translate-y-1'
-          }`}
+          className={[
+            'overflow-hidden',
+            'transition-[max-height,opacity,transform]',
+            'duration-300 ease-out will-change-[max-height,opacity,transform]',
+            showHow ? 'max-h-[560px] opacity-100 translate-y-0 pt-3' : 'max-h-0 opacity-0 -translate-y-1 pt-0',
+          ].join(' ')}
         >
-          <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-neutral-300 backdrop-blur-sm">
+          <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-neutral-300 backdrop-blur-sm">
             <ul className="list-disc space-y-2 pl-5">
               <li>
                 <span className="font-medium">Cap</span> is the max gas price this jar accepts.
@@ -183,18 +188,18 @@ export default function CreateJar({ onCreated }: Props) {
               <li>
                 For smoother tips pick Medium or High when gas is very low now.
               </li>
-              <li className="text-neutral-400">
-                {usingFallback ? 'Using fallback for gas price.' : 'Live gas price loaded.'}
-              </li>
+              {usingFallback && (
+                <li className="text-neutral-400">
+                  Using fallback for gas price.
+                </li>
+              )}
             </ul>
           </div>
         </div>
       </div>
 
-      {/* MAIN CARD — unchanged layout */}
+      {/* MAIN CARD (без дублирующего заголовка) */}
       <div className="space-y-4">
-        <h2 className="text-center text-2xl font-semibold">Create Jar</h2>
-
         {/* Input (Gwei) */}
         <label className="block text-center text-sm font-medium">Max gas price (gwei)</label>
         <input
