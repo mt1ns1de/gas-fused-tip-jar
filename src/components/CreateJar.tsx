@@ -10,7 +10,7 @@ import { config } from '@/lib/wagmi';
 import { createJar } from '@/actions/createJar.client';
 import ShareModal from '@/components/ShareModal';
 import JarVisual from '@/components/JarVisual';
-import { getSafeGasPrice } from '@/lib/gas'; // safe fallback
+import { getSafeGasPrice } from '@/lib/gas';
 
 type Props = {
   onCreated?: (address: `0x${string}`) => void;
@@ -28,7 +28,7 @@ export default function CreateJar({ onCreated }: Props) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // “How it works” (left sidebar)
+  // left floating help
   const [showHow, setShowHow] = useState(false);
 
   // result
@@ -38,7 +38,7 @@ export default function CreateJar({ onCreated }: Props) {
   // celebration modal
   const [showCelebration, setShowCelebration] = useState(false);
 
-  // ===== helpers =====
+  /** ===== helpers ===== */
   async function ensureBase(): Promise<boolean> {
     try {
       if (getChainId(config) === base.id) return true;
@@ -51,7 +51,7 @@ export default function CreateJar({ onCreated }: Props) {
     }
   }
 
-  // fetch current gas (with safe fallback) and refresh periodically
+  /** ===== gas price + medium preset ===== */
   useEffect(() => {
     let alive = true;
     const load = async () => {
@@ -116,7 +116,7 @@ export default function CreateJar({ onCreated }: Props) {
       }
 
       if (!res?.success) {
-        if (res?.error && /User rejected/i.test(res.error)) return;
+        if (res?.error && /User rejected/i.test(res?.error)) return;
         setErr(res?.error || 'Failed to deploy. Please try again.');
         return;
       }
@@ -147,11 +147,12 @@ export default function CreateJar({ onCreated }: Props) {
     setInputGwei(v);
   };
 
+  /** ===== RENDER ===== */
   return (
-    // Две колонки: слева — сайдбар с кнопкой/панелью; справа — основная карточка
-    <div className="grid gap-6 md:grid-cols-[240px_minmax(0,1fr)]">
-      {/* LEFT SIDEBAR */}
-      <aside className="hidden md:block">
+    // оборачиваем центральную колонку, чтобы якорить левую панель
+    <div className="relative">
+      {/* LEFT FLOATING PANEL — shows in empty space on large screens */}
+      <div className="pointer-events-auto absolute -left-[320px] top-2 hidden w-[280px] lg:block">
         <button
           type="button"
           onClick={() => setShowHow((s) => !s)}
@@ -163,13 +164,12 @@ export default function CreateJar({ onCreated }: Props) {
           </span>
         </button>
 
-        {/* Collapsible under the button, LEFT side */}
         <div
           className={`overflow-hidden transition-all duration-300 ${
-            showHow ? 'max-h-[520px] opacity-100 translate-y-0' : 'max-h-0 opacity-0 -translate-y-1'
+            showHow ? 'max-h-[560px] opacity-100 translate-y-0' : 'max-h-0 opacity-0 -translate-y-1'
           }`}
         >
-          <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-neutral-300">
+          <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-neutral-300 backdrop-blur-sm">
             <ul className="list-disc space-y-2 pl-5">
               <li>
                 <span className="font-medium">Cap</span> is the max gas price this jar accepts.
@@ -189,14 +189,13 @@ export default function CreateJar({ onCreated }: Props) {
             </ul>
           </div>
         </div>
-      </aside>
+      </div>
 
-      {/* MAIN CARD (RIGHT) */}
+      {/* MAIN CARD — unchanged layout */}
       <div className="space-y-4">
-        {/* Заголовок для визуального баланса */}
         <h2 className="text-center text-2xl font-semibold">Create Jar</h2>
 
-        {/* Input (Gwei only) */}
+        {/* Input (Gwei) */}
         <label className="block text-center text-sm font-medium">Max gas price (gwei)</label>
         <input
           value={inputGwei}
@@ -246,7 +245,7 @@ export default function CreateJar({ onCreated }: Props) {
           Transactions will only proceed if the network gas price is ≤ your cap.
         </p>
 
-        {/* Create (center) */}
+        {/* Create */}
         <div className="flex justify-center">
           <button
             onClick={onCreate}
