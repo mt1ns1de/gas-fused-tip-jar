@@ -10,7 +10,7 @@ import { config } from '@/lib/wagmi';
 import { createJar } from '@/actions/createJar.client';
 import ShareModal from '@/components/ShareModal';
 import JarVisual from '@/components/JarVisual';
-import { getSafeGasPrice, gweiFromWei } from '@/lib/gas'; // ✅ safe gas fallback
+import { getSafeGasPrice } from '@/lib/gas';
 
 type Props = {
   onCreated?: (address: `0x${string}`) => void;
@@ -22,9 +22,9 @@ export default function CreateJar({ onCreated }: Props) {
   const publicClient = usePublicClient();
 
   // UI state
-  const [inputGwei, setInputGwei] = useState<string>('5'); // gwei only
+  const [inputGwei, setInputGwei] = useState<string>(''); // 🔹 initially empty, will be set to medium
   const [netGasGwei, setNetGasGwei] = useState<string>('0');
-  const [usingFallback, setUsingFallback] = useState<boolean>(false); // ✅ show if RPC fallback used
+  const [usingFallback, setUsingFallback] = useState<boolean>(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -39,14 +39,11 @@ export default function CreateJar({ onCreated }: Props) {
   async function ensureBase(): Promise<boolean> {
     try {
       if (getChainId(config) === base.id) return true;
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
     try {
       await switchChain(config, { chainId: base.id });
       return true;
     } catch {
-      // some wallets won't auto-switch
       return false;
     }
   }
@@ -57,21 +54,19 @@ export default function CreateJar({ onCreated }: Props) {
     const load = async () => {
       try {
         if (!publicClient) return;
-        // ✅ safe gas price with fallback (fixes 0.00 gwei from rate-limited RPC)
         const { wei, fallbackUsed } = await getSafeGasPrice(publicClient);
         if (!alive) return;
-        setNetGasGwei(formatGwei(wei));
+        const gwei = Number(formatGwei(wei));
+        setNetGasGwei(gwei.toFixed(3));
         setUsingFallback(fallbackUsed);
-      } catch {
-        // keep previous value
-      }
+
+        // 🔹 Auto-set Medium preset (1.5×) only once at init
+        setInputGwei((prev) => (prev === '' ? (gwei * 1.5).toFixed(3) : prev));
+      } catch { /* ignore */ }
     };
     void load();
-    const id = setInterval(load, 20000); // 20s
-    return () => {
-      alive = false;
-      clearInterval(id);
-    };
+    const id = setInterval(load, 20000);
+    return () => { alive = false; clearInterval(id); };
   }, [publicClient]);
 
   const current = useMemo(() => Number(netGasGwei || '0'), [netGasGwei]);
@@ -86,7 +81,7 @@ export default function CreateJar({ onCreated }: Props) {
 
   const multiplierClick = (mul: number) => {
     const baseFee = current || 0;
-    const next = (baseFee * mul).toFixed(2);
+    const next = (baseFee * mul).toFixed(3);
     setInputGwei(next);
   };
 
@@ -100,18 +95,15 @@ export default function CreateJar({ onCreated }: Props) {
     setJarAddress(null);
 
     try {
-      // 1) ensure Base
       const ok = await ensureBase();
       if (!ok) {
         setErr('Please switch your wallet to Base Mainnet (8453) and try again.');
         return;
       }
 
-      // 2) create
       const attempt = async () => createJar({ maxGasPriceWei: capWeiBigInt });
       let res = await attempt();
 
-      // 3) one retry if chain mismatch
       if (!res?.success && res?.error && /does not match the target chain|ChainMismatchError/i.test(res.error)) {
         const switched = await ensureBase();
         if (!switched) {
@@ -122,7 +114,6 @@ export default function CreateJar({ onCreated }: Props) {
       }
 
       if (!res?.success) {
-        // user rejected — ignore silently
         if (res?.error && /User rejected/i.test(res.error)) return;
         setErr(res?.error || 'Failed to deploy. Please try again.');
         return;
@@ -131,19 +122,14 @@ export default function CreateJar({ onCreated }: Props) {
       if (res.txHash) setTxHash(res.txHash as Hex);
       if (res.jarAddress) {
         setJarAddress(res.jarAddress);
-        try {
-          localStorage.setItem('lastJarAddress', res.jarAddress);
-        } catch {}
+        try { localStorage.setItem('lastJarAddress', res.jarAddress); } catch {}
         onCreated?.(res.jarAddress as `0x${string}`);
         setShowCelebration(true);
       }
     } catch (e: any) {
       const msg = String(e?.message || '');
-      if (/User rejected/i.test(msg)) {
-        // ignore
-      } else {
-        setErr(e?.message ?? 'Unknown error');
-      }
+      if (/User rejected/i.test(msg)) { /* ignore */ }
+      else setErr(e?.message ?? 'Unknown error');
     } finally {
       setBusy(false);
     }
@@ -153,7 +139,6 @@ export default function CreateJar({ onCreated }: Props) {
   const explorerAddr = jarAddress ? `https://basescan.org/address/${jarAddress}` : undefined;
   const publicPage = jarAddress ? `/jar/${jarAddress}` : undefined;
 
-  // digits+dot only
   const onGweiChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
     const v = e.target.value.trim();
     if (!/^(\d+(\.\d{0,6})?|\.\d{0,6})?$/.test(v)) return;
@@ -167,15 +152,16 @@ export default function CreateJar({ onCreated }: Props) {
       <input
         value={inputGwei}
         inputMode="decimal"
+        step="0.001"
         onChange={onGweiChange}
         className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 outline-none ring-0 focus:border-[#2563eb]"
-        placeholder="e.g. 5"
+        placeholder="auto medium preset"
       />
 
       {/* Presets */}
       <div className="flex flex-wrap justify-center gap-2">
         <button
-          onClick={() => setInputGwei(current ? current.toFixed(2) : '0')}
+          onClick={() => setInputGwei(current ? current.toFixed(3) : '0')}
           className="rounded-md bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15"
         >
           Auto (recommended)
@@ -203,15 +189,15 @@ export default function CreateJar({ onCreated }: Props) {
       {/* Hint */}
       <p className="text-center text-sm text-neutral-400">
         Current base fee{' '}
-        <span className="tabular-nums">{Number(current).toFixed(2)}</span>{' '}
+        <span className="tabular-nums">{Number(current).toFixed(3)}</span>{' '}
         gwei{usingFallback && <span className="ml-1 text-yellow-400">(using fallback)</span>}.{' '}
         Your cap{' '}
-        <span className="tabular-nums">{Number(inputGwei || 0).toFixed(2)} gwei</span>{' '}
+        <span className="tabular-nums">{Number(inputGwei || 0).toFixed(3)} gwei</span>{' '}
         (<span className="tabular-nums">{capWeiBigInt ? `${formatEther(capWeiBigInt)} ETH` : '0'}</span>).
         Transactions will only proceed if the network gas price is ≤ your cap.
       </p>
 
-      {/* Create (center) */}
+      {/* Create */}
       <div className="flex justify-center">
         <button
           onClick={onCreate}
@@ -223,14 +209,12 @@ export default function CreateJar({ onCreated }: Props) {
         </button>
       </div>
 
-      {/* Error */}
       {err && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
           {err}
         </div>
       )}
 
-      {/* Result */}
       {jarAddress && (
         <div className="rounded-xl border border-white/10 bg-white/5 p-4">
           <div className="mb-2 text-center font-semibold">Jar created!</div>
@@ -276,7 +260,6 @@ export default function CreateJar({ onCreated }: Props) {
         </div>
       )}
 
-      {/* Celebration / Share modal */}
       {showCelebration && (
         <ShareModal
           open={showCelebration}
@@ -291,7 +274,6 @@ export default function CreateJar({ onCreated }: Props) {
         />
       )}
 
-      {/* decorative jar */}
       <div className="pt-2">
         <JarVisual progress={0.65} pulse size={110} />
       </div>
