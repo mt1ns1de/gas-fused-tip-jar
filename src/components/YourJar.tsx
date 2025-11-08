@@ -109,7 +109,7 @@ export default function YourJar({ jarAddress }: { jarAddress: `0x${string}` | st
       {showQR && (
         <div className="mb-5 rounded-xl border border-white/10 bg-black/30 p-4">
           <div className="flex flex-col gap-4 md:flex-row md:items-center">
-            <div className="w-full max-w={[300] + 'px' as any}>
+            <div className="w-full max-w-[300px]">
               <QrCode value={link} />
             </div>
             <div className="text-sm text-neutral-300">
