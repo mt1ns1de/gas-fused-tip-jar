@@ -30,7 +30,6 @@ function mapError(e: unknown): string {
  * Можно вызывать так:
  *  sendTip({ jarAddress, message, valueWei })
  *  sendTip({ jar, message, value })
- * Любое из address/value можно нести под альтернативным ключом.
  */
 export async function sendTip(params: {
   jarAddress?: `0x${string}`;
@@ -50,10 +49,10 @@ export async function sendTip(params: {
     try {
       await switchChain(config, { chainId: base.id });
     } catch {
-      /* ignore — попробуем всё равно */
+      /* ignore */
     }
 
-    // ✅ симуляция перед сабмитом — заранее ловим большинство ошибок
+    // ✅ симуляция перед сабмитом — используем `chain`, не `chainId`
     const publicClient = getPublicClient(config);
     const sim = await publicClient.simulateContract({
       address,
@@ -61,13 +60,12 @@ export async function sendTip(params: {
       functionName: "tip",
       args: [params.message ?? ""],
       value,
-      chainId: base.id,
+      chain: base,
       account: undefined,
     });
 
-    // сабмитим exactly то, что вернула симуляция
     const txHash = await writeContract(config, sim.request);
-    const receipt = await waitForTransactionReceipt(config, { hash: txHash as Hex });
+    await waitForTransactionReceipt(config, { hash: txHash as Hex });
 
     return {
       success: true,

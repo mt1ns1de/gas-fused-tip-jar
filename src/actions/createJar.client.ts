@@ -40,7 +40,6 @@ async function ensureBaseOrFail(): Promise<{ address: `0x${string}` }> {
   }
   if (acc0.chainId !== base.id) {
     await switchChain(config, { chainId: base.id });
-    // подождём фактического переключения (кошелёк может лагать)
     for (let i = 0; i < 6; i++) {
       await new Promise((r) => setTimeout(r, 250));
       const acc = getAccount(config);
@@ -63,17 +62,17 @@ export async function createJar(params: { maxGasPriceWei: bigint }) {
     const { address: account } = await ensureBaseOrFail();
 
     const publicClient = getPublicClient(config);
-    // ✅ simulate
+    // ✅ simulate (используем `chain`, не `chainId`)
     const sim = await publicClient.simulateContract({
       abi: FACTORY_ABI,
       address: FACTORY_ADDRESS,
       functionName: 'createJar',
       args: [params.maxGasPriceWei],
-      chainId: base.id,
+      chain: base,
       account,
     });
 
-    let hash: Hex = (await writeContract(config, sim.request)) as Hex;
+    const hash = (await writeContract(config, sim.request)) as Hex;
     const receipt = await waitForTransactionReceipt(config, { hash });
 
     // Парсим событие JarCreated
@@ -115,13 +114,13 @@ export async function withdrawFromJar(jarAddress: `0x${string}`) {
     const { address: account } = await ensureBaseOrFail();
 
     const publicClient = getPublicClient(config);
-    // ✅ simulate
+    // ✅ simulate (используем `chain`)
     const sim = await publicClient.simulateContract({
       abi: TIPJAR_ABI as any,
       address: jarAddress,
       functionName: 'withdraw',
       args: [] as const,
-      chainId: base.id,
+      chain: base,
       account,
     });
 
