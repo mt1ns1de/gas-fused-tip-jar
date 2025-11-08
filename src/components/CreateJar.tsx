@@ -22,12 +22,14 @@ export default function CreateJar({ onCreated }: Props) {
   const publicClient = usePublicClient();
 
   // UI state
-  const [inputGwei, setInputGwei] = useState<string>(''); // auto set to Medium on first load
+  const [inputGwei, setInputGwei] = useState<string>(''); // авто выставим Medium при первом фетче
   const [netGasGwei, setNetGasGwei] = useState<string>('0');
   const [usingFallback, setUsingFallback] = useState<boolean>(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [showHow, setShowHow] = useState(false); // ← collapsible state
+
+  // “How it works” (left sidebar)
+  const [showHow, setShowHow] = useState(false);
 
   // result
   const [txHash, setTxHash] = useState<Hex | null>(null);
@@ -60,7 +62,7 @@ export default function CreateJar({ onCreated }: Props) {
         const gwei = Number(formatGwei(wei));
         setNetGasGwei(gwei.toFixed(3));
         setUsingFallback(fallbackUsed);
-        // auto Medium (1.5×) only once
+        // auto Medium (1.5×) только один раз
         setInputGwei((prev) => (prev === '' ? (gwei * 1.5).toFixed(3) : prev));
       } catch { /* ignore */ }
     };
@@ -146,35 +148,54 @@ export default function CreateJar({ onCreated }: Props) {
   };
 
   return (
-    <div className="relative"> {/* относительный контейнер для плавающей кнопки слева */}
-      {/* Floating "How it works" on desktop (left side) */}
-      <button
-        type="button"
-        onClick={() => setShowHow((s) => !s)}
-        className="hidden md:flex items-center gap-1 absolute -left-32 top-4 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-neutral-200 hover:bg-white/10 transition"
-        title="How it works"
-      >
-        How it works
-        <span
-          className={`inline-block transition-transform ${showHow ? 'rotate-180' : ''}`}
-          aria-hidden
-        >
-          ▾
-        </span>
-      </button>
-
-      {/* Mobile fallback button (inside flow) */}
-      <div className="mb-2 md:hidden">
+    // Две колонки: слева — сайдбар с кнопкой/панелью; справа — основная карточка
+    <div className="grid gap-6 md:grid-cols-[240px_minmax(0,1fr)]">
+      {/* LEFT SIDEBAR */}
+      <aside className="hidden md:block">
         <button
           type="button"
           onClick={() => setShowHow((s) => !s)}
-          className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-neutral-200 hover:bg-white/10 transition"
+          className="w-full select-none rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-neutral-200 shadow-sm transition hover:bg-white/10"
         >
-          How it works <span className={`inline-block ${showHow ? 'rotate-180' : ''}`}>▾</span>
+          <span className="inline-flex items-center gap-1">
+            How it works
+            <span className={`transition-transform ${showHow ? 'rotate-180' : ''}`}>▾</span>
+          </span>
         </button>
-      </div>
 
+        {/* Collapsible under the button, LEFT side */}
+        <div
+          className={`overflow-hidden transition-all duration-300 ${
+            showHow ? 'max-h-[520px] opacity-100 translate-y-0' : 'max-h-0 opacity-0 -translate-y-1'
+          }`}
+        >
+          <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-neutral-300">
+            <ul className="list-disc space-y-2 pl-5">
+              <li>
+                <span className="font-medium">Cap</span> is the max gas price this jar accepts.
+              </li>
+              <li>
+                If network gas is higher than the cap, a tip reverts with <span className="italic">Gas price too high</span>.
+              </li>
+              <li>
+                Presets: Auto uses current gas, Low 1.1×, Medium 1.5×, High 2.0×.
+              </li>
+              <li>
+                For smoother tips pick Medium or High when gas is very low now.
+              </li>
+              <li className="text-neutral-400">
+                {usingFallback ? 'Using fallback for gas price.' : 'Live gas price loaded.'}
+              </li>
+            </ul>
+          </div>
+        </div>
+      </aside>
+
+      {/* MAIN CARD (RIGHT) */}
       <div className="space-y-4">
+        {/* Заголовок для визуального баланса */}
+        <h2 className="text-center text-2xl font-semibold">Create Jar</h2>
+
         {/* Input (Gwei only) */}
         <label className="block text-center text-sm font-medium">Max gas price (gwei)</label>
         <input
@@ -218,41 +239,12 @@ export default function CreateJar({ onCreated }: Props) {
         <p className="text-center text-sm text-neutral-400">
           Current base fee{' '}
           <span className="tabular-nums">{Number(current).toFixed(3)}</span>{' '}
-          gwei{usingFallback && <span className="ml-1 text-yellow-400">(using fallback)</span>}.{' '}
+          gwei{usingFallback && <span className="ml-1 text-neutral-300">(using fallback)</span>}.{' '}
           Your cap{' '}
           <span className="tabular-nums">{Number(inputGwei || 0).toFixed(3)} gwei</span>{' '}
           (<span className="tabular-nums">{capWeiBigInt ? `${formatEther(capWeiBigInt)} ETH` : '0'}</span>).
           Transactions will only proceed if the network gas price is ≤ your cap.
         </p>
-
-        {/* Collapsible “How it works” panel */}
-        <div
-          className={`overflow-hidden transition-all duration-300 ${
-            showHow ? 'max-h-[420px] opacity-100 translate-y-0' : 'max-h-0 opacity-0 -translate-y-1'
-          }`}
-        >
-          <div className="mt-1 rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-neutral-300">
-            <ul className="list-disc space-y-1 pl-5">
-              <li>
-                <span className="font-medium">Cap</span> is the max gas price this jar accepts.
-              </li>
-              <li>
-                If network gas is higher than the cap, a tip reverts with <span className="italic">Gas price too high</span>.
-              </li>
-              <li>
-                Presets: Auto uses current gas, Low 1.1×, Medium 1.5×, High 2.0×.
-              </li>
-              <li>
-                For smoother tips pick Medium or High, especially when gas is very low right now.
-              </li>
-              <li>
-                {`If you see `}
-                <span className="text-yellow-300">using fallback</span>
-                {`, we used a safe cached value so numbers never show as zero.`}
-              </li>
-            </ul>
-          </div>
-        </div>
 
         {/* Create (center) */}
         <div className="flex justify-center">
