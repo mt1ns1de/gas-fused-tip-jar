@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useAccount, useChainId, usePublicClient } from 'wagmi';
+import { useAccount, usePublicClient } from 'wagmi';
 import { type Hex, formatGwei, formatEther, parseGwei } from 'viem';
 import { base } from 'viem/chains';
 import { switchChain, getChainId } from 'wagmi/actions';
@@ -18,7 +18,6 @@ type Props = {
 
 export default function CreateJar({ onCreated }: Props) {
   const { isConnected } = useAccount();
-  const chainId = useChainId();
   const publicClient = usePublicClient();
 
   // UI state
@@ -165,35 +164,38 @@ export default function CreateJar({ onCreated }: Props) {
           </span>
         </button>
 
-        {/* Плавное раскрытие без рывков: паддинг в анимируемом контейнере */}
+        {/* Плавное раскрытие без рывков:
+            анимируем только max-height и opacity; отступ вынесен во внутренний .pt-3 */}
         <div
           className={[
             'overflow-hidden',
-            'transition-[max-height,opacity,transform]',
-            'duration-300 ease-out will-change-[max-height,opacity,transform]',
-            showHow ? 'max-h-[560px] opacity-100 translate-y-0 pt-3' : 'max-h-0 opacity-0 -translate-y-1 pt-0',
+            'transition-[max-height,opacity]',
+            'duration-300 ease-out',
+            showHow ? 'max-h-[560px] opacity-100' : 'max-h-0 opacity-0',
           ].join(' ')}
         >
-          <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-neutral-300 backdrop-blur-sm">
-            <ul className="list-disc space-y-2 pl-5">
-              <li>
-                <span className="font-medium">Cap</span> is the max gas price this jar accepts.
-              </li>
-              <li>
-                If network gas is higher than the cap, a tip reverts with <span className="italic">Gas price too high</span>.
-              </li>
-              <li>
-                Presets: Auto uses current gas, Low 1.1×, Medium 1.5×, High 2.0×.
-              </li>
-              <li>
-                For smoother tips pick Medium or High when gas is very low now.
-              </li>
-              {usingFallback && (
-                <li className="text-neutral-400">
-                  Using fallback for gas price.
+          <div className="pt-3">
+            <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-neutral-300 backdrop-blur-sm">
+              <ul className="list-disc space-y-2 pl-5">
+                <li>
+                  <span className="font-medium">Cap</span> is the max gas price this jar accepts.
                 </li>
-              )}
-            </ul>
+                <li>
+                  If network gas is higher than the cap, a tip reverts with <span className="italic">Gas price too high</span>.
+                </li>
+                <li>
+                  Presets: Auto uses current gas, Low 1.1×, Medium 1.5×, High 2.0×.
+                </li>
+                <li>
+                  For smoother tips pick Medium or High when gas is very low now.
+                </li>
+                {usingFallback && (
+                  <li className="text-neutral-400">
+                    Using fallback for gas price.
+                  </li>
+                )}
+              </ul>
+            </div>
           </div>
         </div>
       </div>
