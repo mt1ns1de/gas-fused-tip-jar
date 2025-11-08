@@ -10,6 +10,7 @@ import { config } from '@/lib/wagmi';
 import { createJar } from '@/actions/createJar.client';
 import ShareModal from '@/components/ShareModal';
 import JarVisual from '@/components/JarVisual';
+import { getSafeGasPrice, gweiFromWei } from '@/lib/gas'; // ✅ safe gas fallback
 
 type Props = {
   onCreated?: (address: `0x${string}`) => void;
@@ -21,8 +22,9 @@ export default function CreateJar({ onCreated }: Props) {
   const publicClient = usePublicClient();
 
   // UI state
-  const [inputGwei, setInputGwei] = useState<string>('5'); // только gwei
+  const [inputGwei, setInputGwei] = useState<string>('5'); // gwei only
   const [netGasGwei, setNetGasGwei] = useState<string>('0');
+  const [usingFallback, setUsingFallback] = useState<boolean>(false); // ✅ show if RPC fallback used
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -36,7 +38,6 @@ export default function CreateJar({ onCreated }: Props) {
   // ===== helpers =====
   async function ensureBase(): Promise<boolean> {
     try {
-      // если уже на Base — ничего не делаем
       if (getChainId(config) === base.id) return true;
     } catch {
       /* ignore */
@@ -45,25 +46,28 @@ export default function CreateJar({ onCreated }: Props) {
       await switchChain(config, { chainId: base.id });
       return true;
     } catch {
-      // некоторые кошельки (редко) не дают переключать сеть программно
+      // some wallets won't auto-switch
       return false;
     }
   }
 
-  // fetch current gas (и периодически обновляем)
+  // fetch current gas (with safe fallback) and refresh periodically
   useEffect(() => {
     let alive = true;
     const load = async () => {
       try {
-        const gp = await publicClient?.getGasPrice();
-        if (!alive || !gp) return;
-        setNetGasGwei(formatGwei(gp));
+        if (!publicClient) return;
+        // ✅ safe gas price with fallback (fixes 0.00 gwei from rate-limited RPC)
+        const { wei, fallbackUsed } = await getSafeGasPrice(publicClient);
+        if (!alive) return;
+        setNetGasGwei(formatGwei(wei));
+        setUsingFallback(fallbackUsed);
       } catch {
-        /* ignore */
+        // keep previous value
       }
     };
-    load();
-    const id = setInterval(load, 20000); // раз в 20с
+    void load();
+    const id = setInterval(load, 20000); // 20s
     return () => {
       alive = false;
       clearInterval(id);
@@ -96,19 +100,18 @@ export default function CreateJar({ onCreated }: Props) {
     setJarAddress(null);
 
     try {
-      // 1) гарантируем сеть Base
+      // 1) ensure Base
       const ok = await ensureBase();
       if (!ok) {
         setErr('Please switch your wallet to Base Mainnet (8453) and try again.');
         return;
       }
 
-      // 2) вызов
+      // 2) create
       const attempt = async () => createJar({ maxGasPriceWei: capWeiBigInt });
-
       let res = await attempt();
 
-      // 3) если кошелёк внезапно был не на той сети — переключаем и ретраим один раз
+      // 3) one retry if chain mismatch
       if (!res?.success && res?.error && /does not match the target chain|ChainMismatchError/i.test(res.error)) {
         const switched = await ensureBase();
         if (!switched) {
@@ -119,10 +122,8 @@ export default function CreateJar({ onCreated }: Props) {
       }
 
       if (!res?.success) {
-        // если юзер отменил — молчим
-        if (res?.error && /User rejected/i.test(res.error)) {
-          return;
-        }
+        // user rejected — ignore silently
+        if (res?.error && /User rejected/i.test(res.error)) return;
         setErr(res?.error || 'Failed to deploy. Please try again.');
         return;
       }
@@ -139,7 +140,7 @@ export default function CreateJar({ onCreated }: Props) {
     } catch (e: any) {
       const msg = String(e?.message || '');
       if (/User rejected/i.test(msg)) {
-        // игнорируем отмену пользователем
+        // ignore
       } else {
         setErr(e?.message ?? 'Unknown error');
       }
@@ -152,7 +153,7 @@ export default function CreateJar({ onCreated }: Props) {
   const explorerAddr = jarAddress ? `https://basescan.org/address/${jarAddress}` : undefined;
   const publicPage = jarAddress ? `/jar/${jarAddress}` : undefined;
 
-  // только цифры/точка в инпуте
+  // digits+dot only
   const onGweiChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
     const v = e.target.value.trim();
     if (!/^(\d+(\.\d{0,6})?|\.\d{0,6})?$/.test(v)) return;
@@ -161,8 +162,8 @@ export default function CreateJar({ onCreated }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Input (только Gwei) */}
-      <label className="block text-sm font-medium text-center">Max gas price (gwei)</label>
+      {/* Input (Gwei only) */}
+      <label className="block text-center text-sm font-medium">Max gas price (gwei)</label>
       <input
         value={inputGwei}
         inputMode="decimal"
@@ -203,13 +204,14 @@ export default function CreateJar({ onCreated }: Props) {
       <p className="text-center text-sm text-neutral-400">
         Current base fee{' '}
         <span className="tabular-nums">{Number(current).toFixed(2)}</span>{' '}
-        gwei. Your cap{' '}
+        gwei{usingFallback && <span className="ml-1 text-yellow-400">(using fallback)</span>}.{' '}
+        Your cap{' '}
         <span className="tabular-nums">{Number(inputGwei || 0).toFixed(2)} gwei</span>{' '}
         (<span className="tabular-nums">{capWeiBigInt ? `${formatEther(capWeiBigInt)} ETH` : '0'}</span>).
         Transactions will only proceed if the network gas price is ≤ your cap.
       </p>
 
-      {/* Create (по центру) */}
+      {/* Create (center) */}
       <div className="flex justify-center">
         <button
           onClick={onCreate}
@@ -289,7 +291,7 @@ export default function CreateJar({ onCreated }: Props) {
         />
       )}
 
-      {/* декоративная банка */}
+      {/* decorative jar */}
       <div className="pt-2">
         <JarVisual progress={0.65} pulse size={110} />
       </div>
