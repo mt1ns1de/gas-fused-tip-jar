@@ -6,7 +6,7 @@ import { base } from 'viem/chains';
 import { getAccount, switchChain, getPublicClient } from 'wagmi/actions';
 import { config } from '@/lib/wagmi';
 
-// ABI фабрики из .env.local (одна строка JSON)
+// Factory ABI from .env (single-line JSON)
 const FACTORY_ABI: any = (() => {
   try {
     return JSON.parse(process.env.NEXT_PUBLIC_FACTORY_ABI ?? '[]');
@@ -17,20 +17,20 @@ const FACTORY_ABI: any = (() => {
 
 const FACTORY_ADDRESS = process.env.NEXT_PUBLIC_FACTORY_BASE_MAINNET as `0x${string}`;
 
-/** дружелюбные тексты ошибок */
+/** map raw errors → concise UX texts (EN) */
 function mapError(e: unknown): string {
   const raw = String((e as any)?.shortMessage || (e as any)?.message || e || '');
   const msg = raw.toLowerCase();
 
-  if (msg.includes('user rejected')) return 'Подпись отклонена в кошельке.';
-  if (msg.includes('only owner') || msg.includes('not owner')) return 'Только владелец может выводить средства.';
-  if (msg.includes('insufficient funds')) return 'Недостаточно средств (или газа) для операции.';
+  if (msg.includes('user rejected')) return 'Signature was rejected in the wallet.';
+  if (msg.includes('only owner') || msg.includes('not owner')) return 'Only the owner can withdraw.';
+  if (msg.includes('insufficient funds')) return 'Insufficient balance (or gas) to perform the action.';
   if (msg.includes('wrong chain') || msg.includes('chain mismatch') || msg.includes('chain id'))
-    return 'Переключитесь на Base Mainnet (8453) и повторите.';
+    return 'Please switch your wallet to Base Mainnet (8453) and try again.';
   if (msg.includes('no backend is currently healthy') || msg.includes('timeout'))
-    return 'Провайдер сети нестабилен. Попробуйте позже.';
+    return 'Network provider is unstable. Please try again shortly.';
 
-  return 'Операция не выполнена. Попробуйте ещё раз.';
+  return 'The operation failed. Please try again.';
 }
 
 async function ensureBaseOrFail(): Promise<{ address: `0x${string}` }> {
@@ -52,7 +52,7 @@ async function ensureBaseOrFail(): Promise<{ address: `0x${string}` }> {
   return { address: acc0.address as `0x${string}` };
 }
 
-/** Создание банки через фабрику (с симуляцией) */
+/** Create Jar via factory (simulate first) */
 export async function createJar(params: { maxGasPriceWei: bigint }) {
   try {
     if (!FACTORY_ADDRESS || !FACTORY_ABI?.length) {
@@ -62,7 +62,6 @@ export async function createJar(params: { maxGasPriceWei: bigint }) {
     const { address: account } = await ensureBaseOrFail();
 
     const publicClient = getPublicClient(config);
-    // ✅ simulate (используем `chain`, не `chainId`)
     const sim = await publicClient.simulateContract({
       abi: FACTORY_ABI,
       address: FACTORY_ADDRESS,
@@ -75,7 +74,7 @@ export async function createJar(params: { maxGasPriceWei: bigint }) {
     const hash = (await writeContract(config, sim.request)) as Hex;
     const receipt = await waitForTransactionReceipt(config, { hash });
 
-    // Парсим событие JarCreated
+    // parse JarCreated
     let jar: `0x${string}` | undefined;
     for (const log of receipt.logs) {
       try {
@@ -94,7 +93,7 @@ export async function createJar(params: { maxGasPriceWei: bigint }) {
           }
         }
       } catch {
-        // не наше событие — пропускаем
+        // skip non-factory events
       }
     }
 
@@ -104,7 +103,7 @@ export async function createJar(params: { maxGasPriceWei: bigint }) {
   }
 }
 
-/** Вывод средств из конкретной банки (с симуляцией) */
+/** Withdraw (simulate first) */
 export async function withdrawFromJar(jarAddress: `0x${string}`) {
   try {
     const TIPJAR_ABI = [
@@ -114,7 +113,6 @@ export async function withdrawFromJar(jarAddress: `0x${string}`) {
     const { address: account } = await ensureBaseOrFail();
 
     const publicClient = getPublicClient(config);
-    // ✅ simulate (используем `chain`)
     const sim = await publicClient.simulateContract({
       abi: TIPJAR_ABI as any,
       address: jarAddress,

@@ -7,27 +7,26 @@ import { config } from "@/lib/wagmi";
 import { TIPJAR_ABI } from "@/lib/abiTipJar";
 import { type Hex } from "viem";
 
-/** маппер ошибок → понятные тексты */
+/** map raw provider/wallet errors → concise UX texts (EN) */
 function mapError(e: unknown): string {
   const raw = String((e as any)?.shortMessage || (e as any)?.message || e || "");
   const msg = raw.toLowerCase();
 
-  if (msg.includes("user rejected")) return "Подпись отклонена в кошельке.";
+  if (msg.includes("user rejected")) return "Signature was rejected in the wallet.";
   if (msg.includes("insufficient funds") || msg.includes("insufficient balance"))
-    return "Недостаточно средств для суммы и комиссии.";
+    return "Insufficient balance to cover amount and fees.";
   if (msg.includes("wrong chain") || msg.includes("chain mismatch") || msg.includes("chain id"))
-    return "Переключитесь на Base Mainnet (8453) и повторите.";
+    return "Please switch your wallet to Base Mainnet (8453) and try again.";
   if (msg.includes("max fee") || msg.includes("priority fee"))
-    return "Некорректная комиссия. Проверьте настройки газа.";
+    return "Invalid gas settings. Please check max/priority fee.";
   if (msg.includes("timeout") || msg.includes("no backend is currently healthy"))
-    return "Провайдер сети нестабилен. Попробуйте чуть позже.";
+    return "Network provider is unstable. Please try again shortly.";
 
-  return "Не удалось отправить чаевые. Попробуйте ещё раз.";
+  return "Failed to send tip. Please try again.";
 }
 
 /**
- * Универсальный сигнатурный адаптер.
- * Можно вызывать так:
+ * Flexible adapter:
  *  sendTip({ jarAddress, message, valueWei })
  *  sendTip({ jar, message, value })
  */
@@ -45,14 +44,14 @@ export async function sendTip(params: {
   if (!value || value <= 0n) return { success: false, error: "Invalid tip amount" } as const;
 
   try {
-    // мягкий автосвитч на Base
+    // soft auto-switch to Base
     try {
       await switchChain(config, { chainId: base.id });
     } catch {
-      /* ignore */
+      /* ignore — proceed anyway, simulate will fail with clear text */
     }
 
-    // ✅ симуляция перед сабмитом — используем `chain`, не `chainId`
+    // simulate first for better error surfacing
     const publicClient = getPublicClient(config);
     const sim = await publicClient.simulateContract({
       address,
