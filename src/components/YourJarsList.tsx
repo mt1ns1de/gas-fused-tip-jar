@@ -14,7 +14,7 @@ export default function YourJarsList() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // === анти-гидрационный флаг ===
+  // анти-гидрационный флаг
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -113,10 +113,34 @@ export default function YourJarsList() {
     </ul>
   );
 
-  // стабильный лейбл на первом клиентском рендере
-  const btnLabel = mounted && loading ? 'Refreshing…' : 'Refresh';
-  // важное: disabled остаётся true до маунта → совпадёт с SSR
-  const btnDisabled = !mounted || loading || !address;
+  // ВАЖНО: до маунта всегда рендерим один и тот же скелетон,
+  // чтобы SSR и первый клиентский рендер совпадали.
+  if (!mounted) {
+    return (
+      <section className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm">
+        <h3 className="mb-3 text-lg font-semibold text-center">Your Jars</h3>
+
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+          <Skeleton />
+
+          <div className="mt-4 flex items-center justify-between">
+            <button
+              type="button"
+              disabled
+              className="rounded-md bg-white/10 px-3 py-1.5 text-sm disabled:opacity-50"
+            >
+              Refresh
+            </button>
+            <div className="text-xs text-neutral-400">—</div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // после маунта всё как обычно
+  const btnLabel = loading ? 'Refreshing…' : 'Refresh';
+  const btnDisabled = loading || !address;
 
   return (
     <section className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm">
@@ -127,8 +151,6 @@ export default function YourJarsList() {
           <Empty />
         ) : err ? (
           <ErrorBox text={err} />
-        ) : !mounted ? (
-          <Skeleton />
         ) : loading ? (
           <Skeleton />
         ) : rows.length === 0 ? (
