@@ -1,4 +1,3 @@
-// app/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -12,37 +11,203 @@ import { useRouter } from 'next/navigation';
 import Slogan from '@/components/Slogan';
 import YourJarsList from '@/components/YourJarsList';
 
+/* ========= хелпер для client-only ========= */
+
 function useMounted() {
   const [m, setM] = useState(false);
   useEffect(() => setM(true), []);
   return m;
 }
 
+/* ========= статы по кошельку ========= */
+
+type JarStats = {
+  count: number;
+  lastAddress: string | null;
+};
+
+function emptyStats(): JarStats {
+  return { count: 0, lastAddress: null };
+}
+
+/* ========= тип для снапшота газа от CreateJar ========= */
+
+type GasSnapshot = {
+  currentGasGwei: number | null;
+  capGasGwei: number | null;
+};
+
+/* ========= Fuse Tips ========= */
+
+type FuseTipFn = (ctx: { ratio: number | null }) => [string, string];
+
+const FUSE_TIPS: FuseTipFn[] = [
+  ({ ratio }) =>
+    ratio && ratio < 1
+      ? [
+          'Your cap is below current gas, so some tips may fail until gas drops.',
+          'Bump it slightly if you want tips to go through right now.',
+        ]
+      : [
+          'Medium (≈1.5×) is the sweet spot when gas is low.',
+          'Balanced between safety during spikes and not overpaying.',
+        ],
+  ({ ratio }) =>
+    ratio && ratio > 2
+      ? [
+          'Your fuse cap is very high — tips almost never block, but you may overpay.',
+          'Use this only when reliability matters more than gas savings.',
+        ]
+      : [
+          'Low (≈1.1×) is for gas geeks who want to squeeze every wei.',
+          'Expect occasional retries when the network gets noisy.',
+        ],
+  () => [
+    'Think of the fuse as a safety ceiling for each supporter.',
+    'If gas spikes too hard, their tip reverts instead of silently burning ETH.',
+  ],
+  () => [
+    'Create jars with different caps for different flows: casual tips vs. high-priority drops.',
+    'Link the “safe” jar in your bio and keep the “aggressive” one for campaigns.',
+  ],
+  ({ ratio }) =>
+    ratio && ratio >= 1.3 && ratio <= 1.7
+      ? [
+          'You are in the classic Medium zone — good for most days on Base.',
+          'Your supporters stay protected while tips keep flowing.',
+        ]
+      : [
+          'If you are not sure what to pick, Medium (≈1.5×) is the default.',
+          'You can always adjust the cap later by creating a new jar.',
+        ],
+  () => [
+    'High (≈2×) is useful when you expect short, intense spikes.',
+    'Think NFT mints, launches, or coordinated tip storms.',
+  ],
+  () => [
+    'Fuse cap doesn’t move funds — it only guards how expensive a tip is allowed to be.',
+    'If gas goes crazy, the transaction reverts and the supporter keeps their ETH.',
+  ],
+  () => [
+    'Sharing a direct jar link is the fastest way to start receiving tips.',
+    'Your supporters don’t need to think about gas math — the fuse is already built in.',
+  ],
+  () => [
+    'Want to experiment? Try one jar with Low, one with Medium, and compare flows.',
+    'Different audiences can tolerate different levels of volatility.',
+  ],
+  () => [
+    'When gas on Base is ultra-cheap, even Medium looks generous.',
+    'That’s usually the best moment to promote your jar links.',
+  ],
+  () => [
+    'Fuse logic lives inside the jar contract — no external oracles or off-chain magic.',
+    'Everything is enforced directly onchain by a simple condition.',
+  ],
+  () => [
+    'If a supporter keeps failing to tip, ask them to try again later — gas might be above your cap.',
+    'Or share another jar with a slightly higher fuse just for them.',
+  ],
+  () => [
+    'You can treat jars as “channels”: one per project, event, or persona.',
+    'Different fuse settings = different risk profiles for each channel.',
+  ],
+  () => [
+    'Most users never think about gas — Fuse Tip Jar does it for them.',
+    'You, as the creator, set the rules once and then just share the link.',
+  ],
+  () => [
+    'If you like calm, predictable flows, stay close to the current gas.',
+    'If you like chaos and speed, push the cap higher and ride the spikes.',
+  ],
+];
+
 export default function Page() {
   const mounted = useMounted();
-  const { isConnected } = useAccount();
+  const { address } = useAccount();
   const chainId = useChainId();
   const router = useRouter();
   const publicClient = usePublicClient();
 
-  // Open-a-jar
-  const [lastJar, setLastJar] = useState<string | null>(null);
+  /* ===== Open-a-jar ===== */
+
   const [openInput, setOpenInput] = useState('');
   const [validating, setValidating] = useState(false);
   const [isValidJar, setIsValidJar] = useState<boolean | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
 
-  // Sidebar light info
+  /* ===== Sidebar stats ===== */
+
+  const [stats, setStats] = useState<JarStats>(() => emptyStats());
   const [lastUpdate, setLastUpdate] = useState('just now');
-  const [recentJarsCount, setRecentJarsCount] = useState<number | null>(null);
+
+  // для блока "Open a Jar" и fallback для Last created
+  const [lastCreatedLocal, setLastCreatedLocal] = useState<string | null>(null);
+
+  /* ===== Fuse gas snapshot от CreateJar ===== */
+
+  const [gasSnapshot, setGasSnapshot] = useState<GasSnapshot>({
+    currentGasGwei: null,
+    capGasGwei: null,
+  });
+
+  /* ===== Fuse Tip rotation state ===== */
+
+  const [tipIndex, setTipIndex] = useState(0);
+  const [tipFading, setTipFading] = useState(false);
+
+  /* ===== загрузка lastJarAddress из localStorage для Open-a-jar ===== */
 
   useEffect(() => {
     if (!mounted) return;
     try {
-      const v = localStorage.getItem('lastJarAddress');
-      if (v) setLastJar(v);
-    } catch {}
+      const v = window.localStorage.getItem('lastJarAddress');
+      if (v) setLastCreatedLocal(v);
+    } catch {
+      // ignore
+    }
   }, [mounted]);
+
+  /* ===== загрузка статов через /api/jars ===== */
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    if (!address) {
+      setStats(emptyStats());
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/jars?owner=${address}`, { cache: 'no-store' });
+        const ctype = res.headers.get('content-type') || '';
+        if (!ctype.includes('application/json')) return;
+
+        const data = await res.json();
+        if (!res.ok || !data?.ok) return;
+
+        const rows: { jar: string }[] = data.rows || [];
+        if (cancelled) return;
+
+        setStats({
+          count: rows.length,
+          lastAddress: rows[0]?.jar ?? null,
+        });
+        setLastUpdate('just now');
+      } catch (e) {
+        console.error('Failed to load jar stats', e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted, address]);
+
+  /* ===== таймер для lastUpdate (чисто косметика) ===== */
 
   useEffect(() => {
     setLastUpdate('just now');
@@ -50,13 +215,7 @@ export default function Page() {
     return () => clearInterval(id);
   }, []);
 
-  useEffect(() => {
-    if (!mounted) return;
-    try {
-      const raw = sessionStorage.getItem('your_jars_count');
-      if (raw != null) setRecentJarsCount(Number(raw));
-    } catch {}
-  }, [mounted]);
+  /* ===== логика Open-a-jar ===== */
 
   const isAddrFormatOk = useMemo(() => isAddress(openInput.trim()), [openInput]);
 
@@ -100,10 +259,19 @@ export default function Page() {
   }, [openInput, publicClient, isAddrFormatOk]);
 
   const onJarCreated = (addr: string) => {
+    // сохраняем последний созданный для "Open a Jar"
     try {
-      localStorage.setItem('lastJarAddress', addr);
-    } catch {}
-    setLastJar(addr);
+      window.localStorage.setItem('lastJarAddress', addr);
+    } catch {
+      // ignore
+    }
+    setLastCreatedLocal(addr);
+
+    // оптимистично обновляем статы (потом всё равно подтянется из /api)
+    setStats((prev) => ({
+      count: prev.count + 1,
+      lastAddress: addr,
+    }));
     setLastUpdate('just now');
   };
 
@@ -114,11 +282,44 @@ export default function Page() {
     router.push(`/jar/${openInput.trim()}`);
   };
 
+  /* ===== Fuse Tip: ratio + выбор текста + анимация ===== */
+
+  const ratio = useMemo(() => {
+    const cur = gasSnapshot.currentGasGwei ?? 0;
+    const cap = gasSnapshot.capGasGwei ?? 0;
+    if (!cur || !cap || cur <= 0 || cap <= 0) return null;
+    return cap / cur;
+  }, [gasSnapshot]);
+
+  const fuseTipLines = useMemo<[string, string]>(() => {
+    const fn = FUSE_TIPS[tipIndex] ?? FUSE_TIPS[0];
+    return fn({ ratio });
+  }, [tipIndex, ratio]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTipFading(true);
+      setTimeout(() => {
+        setTipIndex((prev) => (prev + 1) % FUSE_TIPS.length);
+        setTipFading(false);
+      }, 400);
+    }, 20_000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  /* ===== производные значения ===== */
+
+  const lastCreatedForOpen = lastCreatedLocal || stats.lastAddress;
+  const lastCreatedForStats = stats.lastAddress || lastCreatedLocal;
+
+  /* ===== RENDER ===== */
+
   return (
     <main className="relative z-0 min-h-screen px-4 py-8 sm:px-6 lg:px-8">
       <CursorAura />
 
-      {/* ===== CENTRAL COLUMN (всегда по центру) ===== */}
+      {/* ===== CENTRAL COLUMN ===== */}
       <div className="mx-auto w-full max-w-3xl">
         <header className="mb-8 flex items-center justify-between">
           <div className="space-y-1">
@@ -145,7 +346,12 @@ export default function Page() {
         {/* Create Jar */}
         <section className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm">
           <h2 className="mb-4 text-center text-xl font-semibold">Create Jar</h2>
-          {mounted && <CreateJar onCreated={onJarCreated} />}
+          {mounted && (
+            <CreateJar
+              onCreated={onJarCreated}
+              onGasSnapshotChange={setGasSnapshot}
+            />
+          )}
         </section>
 
         {/* Open a Jar */}
@@ -185,15 +391,15 @@ export default function Page() {
             </button>
           </div>
 
-          {mounted && lastJar && (
+          {mounted && lastCreatedForOpen && (
             <p className="mt-3 text-center text-xs text-neutral-500">
               Last created:{' '}
               <button
                 className="font-mono underline decoration-dotted underline-offset-2 hover:text-neutral-300"
-                onClick={() => setOpenInput(lastJar)}
+                onClick={() => setOpenInput(lastCreatedForOpen)}
                 title="Click to paste last created"
               >
-                {lastJar}
+                {lastCreatedForOpen}
               </button>
             </p>
           )}
@@ -209,28 +415,32 @@ export default function Page() {
         </div>
       </div>
 
-      {/* ===== RIGHT OVERLAY SIDEBAR (не влияет на центр, просто висит справа) ===== */}
+      {/* ===== RIGHT SIDEBAR ===== */}
       <aside
         className="
-          pointer-events-none      /* контейнер не ловит события… */
+          pointer-events-none
           fixed right-6 top-28 z-10 hidden w-[320px] lg:block
         "
       >
         <div className="pointer-events-auto flex flex-col gap-5">
           {/* Your Stats */}
           <section className="rounded-2xl border border-white/10 bg-white/5 p-5 text-sm text-neutral-300 backdrop-blur-sm shadow-[0_0_20px_rgba(255,255,255,0.05)]">
-            <h3 className="mb-3 text-center text-base font-semibold text-white">Your Stats</h3>
+            <h3 className="mb-3 text-center text-base font-semibold text-white">
+              Your Stats
+            </h3>
             <div className="space-y-2">
               <p>
                 Jars you created:{' '}
                 <span className="text-white">
-                  {recentJarsCount == null ? '—' : recentJarsCount}
+                  {stats.count > 0 ? stats.count : '—'}
                 </span>
               </p>
               <p>
                 Last created:{' '}
                 <span className="font-mono text-neutral-200">
-                  {lastJar ? `${lastJar.slice(0, 6)}…${lastJar.slice(-4)}` : '—'}
+                  {lastCreatedForStats
+                    ? `${lastCreatedForStats.slice(0, 6)}…${lastCreatedForStats.slice(-4)}`
+                    : '—'}
                 </span>
               </p>
               <p>
@@ -241,10 +451,16 @@ export default function Page() {
 
           {/* Fuse Tip */}
           <section className="rounded-2xl border border-white/10 bg-white/5 p-5 text-sm text-neutral-300 backdrop-blur-sm shadow-[0_0_20px_rgba(255,255,255,0.05)]">
-            <h3 className="mb-3 text-center text-base font-semibold text-white">Fuse Tip 💡</h3>
-            <div className="min-h-[72px] space-y-1">
-              <p>Medium (1.5×) cap is the sweet spot when gas is low.</p>
-              <p>For smoother flows during spikes — try High (2.0×).</p>
+            <h3 className="mb-3 text-center text-base font-semibold text-white">
+              Fuse Tip 💡
+            </h3>
+            <div
+              className={`min-h-[72px] space-y-1 transition-opacity duration-300 ${
+                tipFading ? 'opacity-0' : 'opacity-100'
+              }`}
+            >
+              <p>{fuseTipLines[0]}</p>
+              <p>{fuseTipLines[1]}</p>
             </div>
           </section>
         </div>
