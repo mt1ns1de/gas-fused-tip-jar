@@ -1,3 +1,4 @@
+// app/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -9,6 +10,7 @@ import CreateJar from '@/components/CreateJar';
 import { TIPJAR_ABI } from '@/lib/abiTipJar';
 import { useRouter } from 'next/navigation';
 import Slogan from '@/components/Slogan';
+import YourJarsList from '@/components/YourJarsList';
 
 function useMounted() {
   const [m, setM] = useState(false);
@@ -23,18 +25,17 @@ export default function Page() {
   const router = useRouter();
   const publicClient = usePublicClient();
 
-  // last created jar (локалсторадж)
+  // Open-a-jar
   const [lastJar, setLastJar] = useState<string | null>(null);
-
-  // адрес для открытия
   const [openInput, setOpenInput] = useState('');
-
-  // состояние валидации адреса / контракта
   const [validating, setValidating] = useState(false);
   const [isValidJar, setIsValidJar] = useState<boolean | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
 
-  // загрузка lastJar после маунта
+  // Sidebar light info
+  const [lastUpdate, setLastUpdate] = useState('just now');
+  const [recentJarsCount, setRecentJarsCount] = useState<number | null>(null);
+
   useEffect(() => {
     if (!mounted) return;
     try {
@@ -43,18 +44,26 @@ export default function Page() {
     } catch {}
   }, [mounted]);
 
-  // валидация формата адреса
-  const isAddrFormatOk = useMemo(() => {
-    const v = openInput.trim();
-    return isAddress(v);
-  }, [openInput]);
+  useEffect(() => {
+    setLastUpdate('just now');
+    const id = setInterval(() => setLastUpdate('a few seconds ago'), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
-  // дебаунс-проверка, что это именно TipJar (а не EOA/любой контракт)
+  useEffect(() => {
+    if (!mounted) return;
+    try {
+      const raw = sessionStorage.getItem('your_jars_count');
+      if (raw != null) setRecentJarsCount(Number(raw));
+    } catch {}
+  }, [mounted]);
+
+  const isAddrFormatOk = useMemo(() => isAddress(openInput.trim()), [openInput]);
+
   useEffect(() => {
     let alive = true;
     const v = openInput.trim();
 
-    // сбрасываем состояния при пустом/невалидном формате
     if (!v || !isAddrFormatOk) {
       setIsValidJar(null);
       setOpenError(null);
@@ -67,7 +76,6 @@ export default function Page() {
       setValidating(true);
       setOpenError(null);
       try {
-        // Пробуем прочитать maxGasPriceWei() — у чужого ABI/EOA упадёт
         await publicClient.readContract({
           address: v as `0x${string}`,
           abi: TIPJAR_ABI as any,
@@ -83,7 +91,7 @@ export default function Page() {
       } finally {
         if (alive) setValidating(false);
       }
-    }, 250); // лёгкий debounce
+    }, 250);
 
     return () => {
       alive = false;
@@ -91,28 +99,26 @@ export default function Page() {
     };
   }, [openInput, publicClient, isAddrFormatOk]);
 
-  // при успешном создании — запомнить адрес
   const onJarCreated = (addr: string) => {
     try {
       localStorage.setItem('lastJarAddress', addr);
     } catch {}
     setLastJar(addr);
+    setLastUpdate('just now');
   };
 
-  // можно открывать, если формат ок и проверка прошла как TipJar
   const canOpen = isAddrFormatOk && isValidJar === true && !validating;
 
   const handleOpen = () => {
     if (!canOpen) return;
-    const a = openInput.trim();
-    router.push(`/jar/${a}`);
+    router.push(`/jar/${openInput.trim()}`);
   };
 
   return (
     <main className="relative z-0 min-h-screen px-4 py-8 sm:px-6 lg:px-8">
       <CursorAura />
 
-      {/* ЦЕНТРАЛЬНАЯ КОЛОНКА (как на странице доната) */}
+      {/* ===== CENTRAL COLUMN (всегда по центру) ===== */}
       <div className="mx-auto w-full max-w-3xl">
         <header className="mb-8 flex items-center justify-between">
           <div className="space-y-1">
@@ -121,7 +127,7 @@ export default function Page() {
               <p className="text-sm text-neutral-400">
                 Network: {chainId ?? '—'} (Base Mainnet)
                 <br />
-                Factory:{' '}
+                Factory{' '}
                 <a
                   className="text-[#7ab4ff] underline"
                   href={`https://basescan.org/address/${process.env.NEXT_PUBLIC_FACTORY_BASE_MAINNET}`}
@@ -136,15 +142,15 @@ export default function Page() {
           <WalletButton />
         </header>
 
-        {/* Create Jar — рендерим только после маунта, чтобы не было гидрации с isConnected */}
+        {/* Create Jar */}
         <section className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm">
-          <h2 className="mb-4 text-xl font-semibold text-center">Create Jar</h2>
+          <h2 className="mb-4 text-center text-xl font-semibold">Create Jar</h2>
           {mounted && <CreateJar onCreated={onJarCreated} />}
         </section>
 
-        {/* Open a Jar (вертикальный стек + кнопка по центру) */}
+        {/* Open a Jar */}
         <section className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm">
-          <h3 className="mb-3 text-lg font-semibold text-center">Open a Jar</h3>
+          <h3 className="mb-3 text-center text-lg font-semibold">Open a Jar</h3>
 
           <input
             className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 outline-none ring-0 focus:border-[#2563eb]"
@@ -153,8 +159,7 @@ export default function Page() {
             onChange={(e) => setOpenInput(e.target.value)}
           />
 
-          {/* Подсказки по статусам */}
-          <div className="mt-2 min-h-[1.5rem] text-sm text-center">
+          <div className="mt-2 min-h-[1.5rem] text-center text-sm">
             {!openInput ? (
               <p className="text-neutral-400">
                 Enter a specific jar address to open its public page (direct access).
@@ -185,9 +190,7 @@ export default function Page() {
               Last created:{' '}
               <button
                 className="font-mono underline decoration-dotted underline-offset-2 hover:text-neutral-300"
-                onClick={() => {
-                  setOpenInput(lastJar);
-                }}
+                onClick={() => setOpenInput(lastJar)}
                 title="Click to paste last created"
               >
                 {lastJar}
@@ -196,10 +199,56 @@ export default function Page() {
           )}
         </section>
 
+        {/* Your Jars */}
+        <section className="mt-6">
+          <YourJarsList />
+        </section>
+
         <div className="mt-8">
           <Slogan />
         </div>
       </div>
+
+      {/* ===== RIGHT OVERLAY SIDEBAR (не влияет на центр, просто висит справа) ===== */}
+      <aside
+        className="
+          pointer-events-none      /* контейнер не ловит события… */
+          fixed right-6 top-28 z-10 hidden w-[320px] lg:block
+        "
+      >
+        <div className="pointer-events-auto flex flex-col gap-5">
+          {/* Your Stats */}
+          <section className="rounded-2xl border border-white/10 bg-white/5 p-5 text-sm text-neutral-300 backdrop-blur-sm shadow-[0_0_20px_rgba(255,255,255,0.05)]">
+            <h3 className="mb-3 text-center text-base font-semibold text-white">Your Stats</h3>
+            <div className="space-y-2">
+              <p>
+                Jars you created:{' '}
+                <span className="text-white">
+                  {recentJarsCount == null ? '—' : recentJarsCount}
+                </span>
+              </p>
+              <p>
+                Last created:{' '}
+                <span className="font-mono text-neutral-200">
+                  {lastJar ? `${lastJar.slice(0, 6)}…${lastJar.slice(-4)}` : '—'}
+                </span>
+              </p>
+              <p>
+                Last update: <span className="text-neutral-200">{lastUpdate}</span>
+              </p>
+            </div>
+          </section>
+
+          {/* Fuse Tip */}
+          <section className="rounded-2xl border border-white/10 bg-white/5 p-5 text-sm text-neutral-300 backdrop-blur-sm shadow-[0_0_20px_rgba(255,255,255,0.05)]">
+            <h3 className="mb-3 text-center text-base font-semibold text-white">Fuse Tip 💡</h3>
+            <div className="min-h-[72px] space-y-1">
+              <p>Medium (1.5×) cap is the sweet spot when gas is low.</p>
+              <p>For smoother flows during spikes — try High (2.0×).</p>
+            </div>
+          </section>
+        </div>
+      </aside>
     </main>
   );
 }

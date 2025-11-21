@@ -14,11 +14,7 @@ import Slogan from '@/components/Slogan';
 import TipSuccessModal from '@/components/TipSuccessModal';
 import { withdrawFromJar } from '@/actions/createJar.client';
 
-// ✅ Toast system (local to this page)
-import { ToastProvider, useToast } from '@/lib/ui/toast';
-import SuccessToastViewport from '@/components/SuccessToast';
-
-// ===== Utils =====
+/** ===== Utils ===== */
 
 function sanitizeMessage(s: unknown, max = 240): string {
   if (!s || typeof s !== 'string') return '';
@@ -61,6 +57,7 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 500): 
 }
 
 /** ===== Owner cache (5 min TTL) ===== */
+
 const OWNER_CACHE_KEY = 'jar_owner_cache_v1';
 type OwnerCache = Record<string, { owner: string; ts: number }>;
 
@@ -94,31 +91,19 @@ function getCachedOwner(jar: string): string | null {
 }
 
 /** ===== Log filter + rate-limit helpers ===== */
+
 const TIPPED_EVENT = parseAbiItem('event Tipped(address from, uint256 amount, string message)');
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms + Math.random() * 200));
 let tipsLoadingLock = false;
 const isPageVisible = () =>
   typeof document !== 'undefined' ? document.visibilityState === 'visible' : true;
 
-// ===== Page wrapper with ToastProvider =====
+/** ===== Page ===== */
 
 export default function JarPublicPage() {
-  return (
-    <ToastProvider>
-      <JarPageInner />
-      <SuccessToastViewport />
-    </ToastProvider>
-  );
-}
-
-// ===== Inner page (can use useToast) =====
-
-function JarPageInner() {
   const mounted = useMounted();
   const publicClient = usePublicClient();
   const { isConnected, address } = useAccount();
-  const { success: toastSuccess, error: toastError } = useToast();
-
   const params = useParams<{ address: string }>();
   const jar = params.address as `0x${string}`;
 
@@ -147,6 +132,10 @@ function JarPageInner() {
   const [jarBalance, setJarBalance] = useState<bigint | null>(null);
   const [withdrawing, setWithdrawing] = useState(false);
   const canWithdraw = !!owner && !!address && owner.toLowerCase() === address.toLowerCase();
+
+  // ===== локальные ошибки (красиво, не навязчиво) =====
+  const [tipError, setTipError] = useState<string | null>(null);
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
 
   // ===== helpers =====
   const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
@@ -245,13 +234,9 @@ function JarPageInner() {
     [isConnected, ethAmount, cooldown]
   );
 
-  const publicLink = useMemo(() => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    return `${origin}/jar/${jar}`;
-  }, [jar]);
-
   const onSend = async () => {
     if (!canSend) return;
+    setTipError(null);
     try {
       setPending(true);
       setCooldown(true);
@@ -265,29 +250,14 @@ function JarPageInner() {
         setMessage('');
         setLastTx(res.txHash || null);
         setShowSuccess(true);
-
-        // ✅ Toast: Tip sent
-        const actions = [
-          ...(res.txHash ? [{ label: 'View tx', href: `https://basescan.org/tx/${res.txHash}` }] : []),
-          { label: 'Open jar', href: publicLink },
-        ];
-        toastSuccess('Tip sent 💙', { actions });
-
         // parallel refresh
         void loadTips(true);
         void refreshOwnerPanel(true);
       } else {
-        // дружелюбная ошибка
-        const msg =
-          /Gas price too high/i.test(res.error || '')
-            ? 'Network gas is above your cap. Try Medium/High or increase cap.'
-            : (res.error || 'Failed to send tip');
-        toastError('Tip failed', { description: msg, _ttl: 5000 });
-        console.error(res.error || 'Failed to send tip');
+        setTipError(res.error || 'Не удалось отправить чаевые.');
       }
     } catch (e: any) {
-      toastError('Tip failed', { description: e?.message || 'Unknown error', _ttl: 5000 });
-      console.error(e?.message || e);
+      setTipError(e?.message || 'Не удалось отправить чаевые.');
     } finally {
       setPending(false);
       setTimeout(() => setCooldown(false), 1200);
@@ -305,17 +275,18 @@ function JarPageInner() {
     try {
       const latest = await withRetry(() => publicClient.getBlockNumber());
       let to = latest;
-      let window = 4_000n;
+      let window = 4_000n; // smaller window to reduce provider load
       let chunks = 0;
       const maxChunks = 3;
       const acc: TipItem[] = [];
 
-      let backoffMs = 600;
+      let backoffMs = 600; // start backoff
 
       while (to >= 0n && acc.length < 20 && chunks < maxChunks) {
         const from = to > window ? to - window : 0n;
 
         try {
+          // Filter by the exact event on RPC side to avoid scanning unrelated logs
           const logs = await publicClient.getLogs({
             address: jar,
             fromBlock: from,
@@ -345,20 +316,23 @@ function JarPageInner() {
                 blockNumber: (ev as any).blockNumber ?? 0n,
               });
             } catch {
-              // skip anomalies
+              // skip rare decoding anomalies
             }
           }
 
+          // reset backoff if success
           backoffMs = 600;
         } catch (err: any) {
           const msg = String(err?.message || '');
           const code = Number(err?.code);
+          // over rate limit → halve window, wait, retry
           if (msg.includes('over rate limit') || code === -32016 || code === 429) {
             window = window / 2n || 1n;
             await sleep(backoffMs);
             backoffMs = Math.min(backoffMs * 2, 5000);
             continue;
           }
+          // provider unstable/timeouts
           if (msg.includes('no backend is currently healthy') || code === -32011 || /timeout/i.test(msg)) {
             window = window / 2n || 1n;
             await sleep(backoffMs);
@@ -386,6 +360,7 @@ function JarPageInner() {
   async function refreshOwnerPanel(silent = false) {
     if (!publicClient) return;
 
+    // quick render from cache
     const cached = getCachedOwner(jar);
     if (cached && !owner) {
       setOwner(cached);
@@ -425,9 +400,12 @@ function JarPageInner() {
 
   useEffect(() => {
     let alive = true;
+
+    // start both in parallel; owner first for faster "owner panel" feel
     void refreshOwnerPanel(true);
     void loadTips();
 
+    // separate intervals; skip when tab hidden
     const idOwner = setInterval(() => {
       if (!alive) return;
       if (!isPageVisible()) return;
@@ -474,7 +452,7 @@ function JarPageInner() {
           const addrL = queue.shift()!;
           const addr = addrL as `0x${string}`;
           const name = await getPrimaryName(addr);
-          updates[addrL] = name;
+          updates[addrL] = name; // .eth / .base / null
         }
       });
       await Promise.all(workers);
@@ -490,6 +468,11 @@ function JarPageInner() {
       setTimeout(() => setCopied(false), 1000);
     } catch {}
   };
+
+  const publicLink = useMemo(() => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    return `${origin}/jar/${jar}`;
+  }, [jar]);
 
   if (!mounted) return null;
 
@@ -560,15 +543,17 @@ function JarPageInner() {
                   type="button"
                   onClick={async () => {
                     if (!canWithdraw) return;
+                    setWithdrawError(null);
                     try {
                       setWithdrawing(true);
-                      await withdrawFromJar(jar);
-                      await refreshOwnerPanel(true);
-                      // ✅ Toast: Withdraw complete
-                      const actions = [{ label: 'Open jar', href: publicLink }];
-                      toastSuccess('Withdraw complete 💙', { actions });
+                      const res = await withdrawFromJar(jar);
+                      if (!res.success) {
+                        setWithdrawError(res.error || 'Не удалось вывести средства.');
+                      } else {
+                        await refreshOwnerPanel(true);
+                      }
                     } catch (e: any) {
-                      toastError('Withdraw failed', { description: e?.message || 'Unknown error', _ttl: 5000 });
+                      setWithdrawError(e?.message || 'Не удалось вывести средства.');
                     } finally {
                       setWithdrawing(false);
                     }
@@ -581,6 +566,22 @@ function JarPageInner() {
                 </button>
               </div>
             </div>
+
+            {/* компактная подсказка об ошибке прямо под кнопками */}
+            {withdrawError && (
+              <div className="mt-2 rounded-lg border border-red-400/30 bg-red-950/40 px-3 py-1 text-xs text-red-200">
+                <div className="flex items-start gap-2">
+                  <span className="mt-1 inline-block h-3 w-3 shrink-0 rounded-full bg-red-400/80" />
+                  <div className="flex-1">{withdrawError}</div>
+                  <button
+                    onClick={() => setWithdrawError(null)}
+                    className="ml-2 rounded-md bg-white/10 px-2 py-0.5 text-[11px] text-neutral-200 hover:bg-white/15"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            )}
           </section>
         )}
 
@@ -630,6 +631,22 @@ function JarPageInner() {
           >
             {pending ? 'Sending…' : cooldown ? 'Please wait…' : 'Send Tip'}
           </button>
+
+          {/* мягкая локальная ошибка формы — сразу под кнопкой */}
+          {tipError && (
+            <div className="mt-3 rounded-lg border border-red-400/30 bg-red-950/40 px-3 py-2 text-sm text-red-200">
+              <div className="flex items-start gap-2">
+                <span className="mt-1 inline-block h-3 w-3 shrink-0 rounded-full bg-red-400/80" />
+                <div className="flex-1">{tipError}</div>
+                <button
+                  onClick={() => setTipError(null)}
+                  className="ml-2 rounded-md bg-white/10 px-2 py-0.5 text-xs text-neutral-200 hover:bg-white/15"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Tips card */}
@@ -699,7 +716,7 @@ function JarPageInner() {
         </div>
       </div>
 
-      {/* Success modal (остаётся как было) */}
+      {/* Success modal */}
       <TipSuccessModal
         open={showSuccess}
         onClose={() => setShowSuccess(false)}
