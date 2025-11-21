@@ -12,11 +12,17 @@ import ShareModal from '@/components/ShareModal';
 import JarVisual from '@/components/JarVisual';
 import { getSafeGasPrice } from '@/lib/gas';
 
-type Props = {
-  onCreated?: (address: `0x${string}`) => void;
+type GasSnapshot = {
+  currentGasGwei: number | null;
+  capGasGwei: number | null;
 };
 
-export default function CreateJar({ onCreated }: Props) {
+type Props = {
+  onCreated?: (address: `0x${string}`) => void;
+  onGasSnapshotChange?: (snapshot: GasSnapshot) => void;
+};
+
+export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
   const { isConnected } = useAccount();
   const publicClient = usePublicClient();
 
@@ -41,7 +47,9 @@ export default function CreateJar({ onCreated }: Props) {
   async function ensureBase(): Promise<boolean> {
     try {
       if (getChainId(config) === base.id) return true;
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     try {
       await switchChain(config, { chainId: base.id });
       return true;
@@ -63,11 +71,16 @@ export default function CreateJar({ onCreated }: Props) {
         setUsingFallback(fallbackUsed);
         // auto Medium (1.5×) только один раз
         setInputGwei((prev) => (prev === '' ? (gwei * 1.5).toFixed(3) : prev));
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     };
     void load();
     const id = setInterval(load, 20000);
-    return () => { alive = false; clearInterval(id); };
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
   }, [publicClient]);
 
   const current = useMemo(() => Number(netGasGwei || '0'), [netGasGwei]);
@@ -79,6 +92,18 @@ export default function CreateJar({ onCreated }: Props) {
       return 0n;
     }
   }, [inputGwei]);
+
+  // Репортим в родителя снапшот по gas / cap,
+  // чтобы сверстать динамичный Fuse Tip
+  useEffect(() => {
+    if (!onGasSnapshotChange) return;
+    const cur = current || 0;
+    const cap = Number(inputGwei || '0');
+    onGasSnapshotChange({
+      currentGasGwei: cur > 0 ? cur : null,
+      capGasGwei: cap > 0 ? cap : null,
+    });
+  }, [current, inputGwei, onGasSnapshotChange]);
 
   const multiplierClick = (mul: number) => {
     const baseFee = current || 0;
@@ -105,7 +130,11 @@ export default function CreateJar({ onCreated }: Props) {
       const attempt = async () => createJar({ maxGasPriceWei: capWeiBigInt });
       let res = await attempt();
 
-      if (!res?.success && res?.error && /does not match the target chain|ChainMismatchError/i.test(res.error)) {
+      if (
+        !res?.success &&
+        res?.error &&
+        /does not match the target chain|ChainMismatchError/i.test(res.error)
+      ) {
         const switched = await ensureBase();
         if (!switched) {
           setErr('Please switch your wallet to Base Mainnet (8453) and try again.');
@@ -115,7 +144,7 @@ export default function CreateJar({ onCreated }: Props) {
       }
 
       if (!res?.success) {
-        if (res?.error && /User rejected/i.test(res?.error)) return;
+        if (res?.error && /User rejected/i.test(res.error)) return;
         setErr(res?.error || 'Failed to deploy. Please try again.');
         return;
       }
@@ -123,14 +152,17 @@ export default function CreateJar({ onCreated }: Props) {
       if (res.txHash) setTxHash(res.txHash as Hex);
       if (res.jarAddress) {
         setJarAddress(res.jarAddress);
-        try { localStorage.setItem('lastJarAddress', res.jarAddress); } catch {}
+        try {
+          localStorage.setItem('lastJarAddress', res.jarAddress);
+        } catch {}
         onCreated?.(res.jarAddress as `0x${string}`);
         setShowCelebration(true);
       }
     } catch (e: any) {
       const msg = String(e?.message || '');
-      if (/User rejected/i.test(msg)) { /* ignore */ }
-      else setErr(e?.message ?? 'Unknown error');
+      if (/User rejected/i.test(msg)) {
+        /* ignore */
+      } else setErr(e?.message ?? 'Unknown error');
     } finally {
       setBusy(false);
     }
@@ -181,7 +213,8 @@ export default function CreateJar({ onCreated }: Props) {
                   <span className="font-medium">Cap</span> is the max gas price this jar accepts.
                 </li>
                 <li>
-                  If network gas is higher than the cap, a tip reverts with <span className="italic">Gas price too high</span>.
+                  If network gas is higher than the cap, a tip reverts with{' '}
+                  <span className="italic">Gas price too high</span>.
                 </li>
                 <li>
                   Presets: Auto uses current gas, Low 1.1×, Medium 1.5×, High 2.0×.
@@ -189,11 +222,7 @@ export default function CreateJar({ onCreated }: Props) {
                 <li>
                   For smoother tips pick Medium or High when gas is very low now.
                 </li>
-                {usingFallback && (
-                  <li className="text-neutral-400">
-                    Using fallback for gas price.
-                  </li>
-                )}
+                {usingFallback && <li className="text-neutral-400">Using fallback for gas price.</li>}
               </ul>
             </div>
           </div>
@@ -245,11 +274,16 @@ export default function CreateJar({ onCreated }: Props) {
         <p className="text-center text-sm text-neutral-400">
           Current base fee{' '}
           <span className="tabular-nums">{Number(current).toFixed(3)}</span>{' '}
-          gwei{usingFallback && <span className="ml-1 text-neutral-300">(using fallback)</span>}.{' '}
-          Your cap{' '}
-          <span className="tabular-nums">{Number(inputGwei || 0).toFixed(3)} gwei</span>{' '}
-          (<span className="tabular-nums">{capWeiBigInt ? `${formatEther(capWeiBigInt)} ETH` : '0'}</span>).
-          Transactions will only proceed if the network gas price is ≤ your cap.
+          gwei{usingFallback && <span className="ml-1 text-neutral-300">(using fallback)</span>}. Your
+          cap{' '}
+          <span className="tabular-nums">
+            {Number(inputGwei || 0).toFixed(3)} gwei
+          </span>{' '}
+          (
+          <span className="tabular-nums">
+            {capWeiBigInt ? `${formatEther(capWeiBigInt)} ETH` : '0'}
+          </span>
+          ). Transactions will only proceed if the network gas price is ≤ your cap.
         </p>
 
         {/* Create */}
@@ -278,7 +312,10 @@ export default function CreateJar({ onCreated }: Props) {
             <div className="text-sm">
               <div className="mb-1 text-center">
                 <span className="text-neutral-400">Address: </span>
-                <span title={jarAddress} className="inline-block max-w-[60ch] truncate align-bottom">
+                <span
+                  title={jarAddress}
+                  className="inline-block max-w-[60ch] truncate align-bottom"
+                >
                   {jarAddress}
                 </span>
               </div>
@@ -326,7 +363,9 @@ export default function CreateJar({ onCreated }: Props) {
             subtitle="Share your link and start receiving tips on Base."
             link={
               publicPage
-                ? (typeof window !== 'undefined' ? `${window.location.origin}${publicPage}` : publicPage)
+                ? typeof window !== 'undefined'
+                  ? `${window.location.origin}${publicPage}`
+                  : publicPage
                 : undefined
             }
           />
