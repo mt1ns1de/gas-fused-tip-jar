@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import { useState } from "react";
 import QrCode from "./QrCode";
@@ -41,7 +41,10 @@ export default function SharePanel({ jarAddress }: { jarAddress: `0x${string}` }
 
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2">
-      <button onClick={onCopy} className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-xs hover:border-zinc-700">
+      <button
+        onClick={onCopy}
+        className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-xs hover:border-zinc-700"
+      >
         {copied ? "Copied!" : "Copy link"}
       </button>
       <a
@@ -52,7 +55,10 @@ export default function SharePanel({ jarAddress }: { jarAddress: `0x${string}` }
       >
         Open public page
       </a>
-      <button onClick={onShare} className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-xs hover:border-zinc-700">
+      <button
+        onClick={onShare}
+        className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-1.5 text-xs hover:border-zinc-700"
+      >
         Share
       </button>
       <button
@@ -63,15 +69,20 @@ export default function SharePanel({ jarAddress }: { jarAddress: `0x${string}` }
       </button>
 
       {showQR && (
-        <div className="mt-3 flex w-full items-center gap-4 rounded-xl border border-zinc-800 bg-zinc-950/60 p-3">
+        <div className="mt-3 flex w-full items-center gap-4 rounded-xl border border-[#2563eb]/35 bg-zinc-950/60 p-3 shadow-[0_16px_45px_rgba(10,20,40,0.9)]">
           <div className="shrink-0">
             <div className="rounded-xl border border-zinc-800 p-2">
               <QrCode value={link} />
             </div>
           </div>
           <div className="space-y-1 text-xs text-zinc-400">
-            <div>Scan to open: <span className="text-zinc-200">{link}</span></div>
-            <button onClick={onDownloadQR} className="rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs hover:border-zinc-700">
+            <div>
+              Scan to open: <span className="text-zinc-200">{link}</span>
+            </div>
+            <button
+              onClick={onDownloadQR}
+              className="rounded border border-zinc-800 bg-zinc-900 px-2 py-1 text-xs hover:border-zinc-700"
+            >
               Download PNG
             </button>
           </div>

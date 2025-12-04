@@ -1,8 +1,10 @@
+// src/components/RecentTips.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { usePublicClient } from 'wagmi';
-import { formatEther, parseAbiItem } from 'viem';
+import { formatEther, type AbiEvent } from 'viem';
+import { TIPJAR_ABI } from '@/lib/abiTipJar';
 
 type Tip = {
   txHash: `0x${string}`;
@@ -29,22 +31,41 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 700): 
   throw lastErr;
 }
 
+// event Tipped из ABI
+const TIPPED_EVENT = TIPJAR_ABI.find(
+  (x) => x.type === 'event' && x.name === 'Tipped',
+) as AbiEvent | undefined;
+
+// event JarCreated из фабрики (для поиска блока деплоя)
+const JAR_CREATED_EVENT = {
+  type: 'event',
+  name: 'JarCreated',
+  inputs: [
+    { indexed: true, name: 'owner', type: 'address' },
+    { indexed: false, name: 'jar', type: 'address' },
+  ],
+} as const as AbiEvent;
+
 export default function RecentTips({ jarAddress }: { jarAddress: `0x${string}` }) {
-  const publicClient = usePublicClient();
+  // Жёстко смотрим на Base mainnet (8453), чтобы не зависеть от сети кошелька
+  const publicClient = usePublicClient({ chainId: 8453 });
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tips, setTips] = useState<Tip[]>([]);
   const [usd, setUsd] = useState<number | null>(null);
 
-  // Цена ETH
+  // блок, с которого деплойнули эту банку
+  const [fromBlock, setFromBlock] = useState<bigint | null>(null);
+
+  // Цена ETH в USD
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         const r = await fetch(
           'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
-          { cache: 'no-store' }
+          { cache: 'no-store' },
         );
         const j = await r.json();
         if (!alive) return;
@@ -59,35 +80,106 @@ export default function RecentTips({ jarAddress }: { jarAddress: `0x${string}` }
     };
   }, []);
 
-  const fetchLogs = async () => {
+  // ищем блок деплоя банки по логам фабрики
+  useEffect(() => {
     if (!publicClient) return;
+
+    const factory = process.env.NEXT_PUBLIC_FACTORY_BASE_MAINNET as `0x${string}` | undefined;
+    if (!factory) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const logs = await withRetry(() =>
+          publicClient.getLogs({
+            address: factory,
+            event: JAR_CREATED_EVENT,
+            args: { jar: jarAddress },
+            fromBlock: 0n,
+            toBlock: 'latest',
+          }),
+        );
+
+        if (cancelled || !logs.length) return;
+
+        // берём первый лог (самый ранний по умолчанию)
+        const first = logs[0];
+        if (first.blockNumber != null) {
+          setFromBlock(first.blockNumber);
+        }
+      } catch (e) {
+        console.error('Failed to detect jar deployment block', e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [publicClient, jarAddress]);
+
+  const fetchLogs = async () => {
+    if (!publicClient) {
+      setError('No public client for Base network.');
+      return;
+    }
+    if (!TIPPED_EVENT) {
+      setError('Tipped event not found in ABI.');
+      return;
+    }
+
     setBusy(true);
     setError(null);
     try {
       const latest = await withRetry(() => publicClient.getBlockNumber());
-      const span = 50_000n;
-      const from = latest > span ? latest - span : 0n;
-      const to = latest;
 
-      const event = parseAbiItem(
-        'event Tipped(address indexed from, uint256 amount, string message)'
-      );
+      // если знаем блок деплоя — читаем с него, иначе fallback на "последний миллион блоков"
+      const FALLBACK_SPAN = 1_000_000n;
+
+      let from: bigint;
+      let to: bigint = latest;
+
+      if (fromBlock && fromBlock > 0n && fromBlock < latest) {
+        from = fromBlock;
+      } else {
+        from = latest > FALLBACK_SPAN ? latest - FALLBACK_SPAN : 0n;
+      }
 
       const logs = await withRetry(() =>
         publicClient.getLogs({
           address: jarAddress,
           fromBlock: from,
           toBlock: to,
-          event,
-        })
+          event: TIPPED_EVENT,
+        }),
       );
 
       const rows: Tip[] = (logs || [])
         .map((l) => {
-          const fromAddr = l.args?.from as `0x${string}` | undefined;
-          const amount = l.args?.amount as bigint | undefined;
-          const message = (l.args?.message as string | undefined) ?? '';
+          const args = l.args as any;
+
+          // Fallback по именам и позициям
+          const fromAddr =
+            (args?.from ??
+              args?.sender ??
+              args?.tipper ??
+              args?.[0]) as `0x${string}` | undefined;
+
+          const amount =
+            (args?.amount ??
+              args?.amountWei ??
+              args?.value ??
+              args?.[1]) as bigint | undefined;
+
+          const message =
+            (args?.message ??
+              args?.note ??
+              args?.text ??
+              args?.[2] ??
+              '') as string;
+
           if (!fromAddr || amount === undefined) return null;
+
           return {
             txHash: l.transactionHash!,
             blockNumber: l.blockNumber!,
@@ -98,11 +190,11 @@ export default function RecentTips({ jarAddress }: { jarAddress: `0x${string}` }
         })
         .filter(Boolean) as Tip[];
 
+      // свежие сверху
       rows.sort((a, b) => (a.blockNumber > b.blockNumber ? -1 : 1));
       setTips(rows);
     } catch (e: any) {
-      const msg =
-        e?.shortMessage || e?.message || 'HTTP request failed.';
+      const msg = e?.shortMessage || e?.message || 'HTTP request failed.';
       setError(msg);
       setTips([]);
     } finally {
@@ -113,7 +205,7 @@ export default function RecentTips({ jarAddress }: { jarAddress: `0x${string}` }
   useEffect(() => {
     fetchLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [publicClient, jarAddress]);
+  }, [publicClient, jarAddress, fromBlock]);
 
   const items = useMemo(() => tips.slice(0, 20), [tips]);
 

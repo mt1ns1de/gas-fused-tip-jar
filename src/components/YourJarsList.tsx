@@ -4,13 +4,12 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useAccount } from 'wagmi';
-
-type Row = { jar: `0x${string}`; blockNumber: string; txHash: string };
+import { normalizeJars, type JarRow } from '@/lib/normalizeJars';
 
 export default function YourJarsList() {
   const { address } = useAccount();
 
-  const [rows, setRows] = useState<Row[]>([]);
+  const [rows, setRows] = useState<JarRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -47,9 +46,11 @@ export default function YourJarsList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canQuery, address]);
 
+  const normalizedRows = useMemo(() => normalizeJars(rows), [rows]);
+
   const list = useMemo(
     () =>
-      rows.map((r) => (
+      normalizedRows.map((r) => (
         <li key={r.jar} className="py-3">
           <div className="flex items-center justify-between gap-3">
             <code
@@ -85,7 +86,7 @@ export default function YourJarsList() {
           </div>
         </li>
       )),
-    [rows],
+    [normalizedRows],
   );
 
   const Empty = () => (
@@ -113,8 +114,7 @@ export default function YourJarsList() {
     </ul>
   );
 
-  // ВАЖНО: до маунта всегда рендерим один и тот же скелетон,
-  // чтобы SSR и первый клиентский рендер совпадали.
+  // до маунта всегда один и тот же скелетон
   if (!mounted) {
     return (
       <section className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm">
@@ -138,9 +138,9 @@ export default function YourJarsList() {
     );
   }
 
-  // после маунта всё как обычно
   const btnLabel = loading ? 'Refreshing…' : 'Refresh';
   const btnDisabled = loading || !address;
+  const count = normalizedRows.length;
 
   return (
     <section className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm">
@@ -153,7 +153,7 @@ export default function YourJarsList() {
           <ErrorBox text={err} />
         ) : loading ? (
           <Skeleton />
-        ) : rows.length === 0 ? (
+        ) : count === 0 ? (
           <Empty />
         ) : (
           <ul className="divide-y divide-white/10">{list}</ul>
@@ -168,9 +168,9 @@ export default function YourJarsList() {
           >
             {btnLabel}
           </button>
-          {rows.length > 0 && (
+          {count > 0 && (
             <div className="text-xs text-neutral-400">
-              {rows.length} {rows.length === 1 ? 'jar' : 'jars'}
+              {count} {count === 1 ? 'jar' : 'jars'}
             </div>
           )}
         </div>
