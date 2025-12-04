@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAccount, useChainId, usePublicClient } from 'wagmi';
 import { isAddress } from 'viem';
+import { AnimatePresence, motion } from 'framer-motion';
+
 import WalletButton from '@/components/WalletButton';
 import CursorAura from '@/components/CursorAura';
 import CreateJar from '@/components/CreateJar';
@@ -10,6 +12,8 @@ import { TIPJAR_ABI } from '@/lib/abiTipJar';
 import { useRouter } from 'next/navigation';
 import Slogan from '@/components/Slogan';
 import YourJarsList from '@/components/YourJarsList';
+import FuseTour from '@/components/FuseTour';
+import { normalizeJars, type JarRow } from '@/lib/normalizeJars';
 
 /* ========= хелпер для client-only ========= */
 
@@ -19,15 +23,77 @@ function useMounted() {
   return m;
 }
 
-/* ========= статы по кошельку ========= */
+/* ========= локальные статы по кошельку (для lastAddress) ========= */
+
+type StoredJar = {
+  address: string;
+  createdAt: string; // ISO
+};
 
 type JarStats = {
   count: number;
   lastAddress: string | null;
+  lastCreatedAt: string | null;
 };
 
+const JAR_KEY_PREFIX = 'gf-tipjar:jars:';
+
 function emptyStats(): JarStats {
-  return { count: 0, lastAddress: null };
+  return { count: 0, lastAddress: null, lastCreatedAt: null };
+}
+
+function getJarKey(wallet?: string | null) {
+  return `${JAR_KEY_PREFIX}${wallet ? wallet.toLowerCase() : 'anon'}`;
+}
+
+function readJarStats(wallet?: string | null): JarStats {
+  if (typeof window === 'undefined') return emptyStats();
+
+  const key = getJarKey(wallet);
+  const raw = window.localStorage.getItem(key);
+  if (!raw) return emptyStats();
+
+  try {
+    const list: StoredJar[] = JSON.parse(raw);
+    if (!Array.isArray(list) || list.length === 0) return emptyStats();
+
+    const first = list[0];
+    return {
+      count: list.length,
+      lastAddress: first?.address ?? null,
+      lastCreatedAt: first?.createdAt ?? null,
+    };
+  } catch {
+    return emptyStats();
+  }
+}
+
+function recordJarForWallet(wallet: string | null | undefined, jarAddress: string) {
+  if (typeof window === 'undefined') return;
+
+  const key = getJarKey(wallet);
+  let list: StoredJar[] = [];
+
+  const raw = window.localStorage.getItem(key);
+  if (raw) {
+    try {
+      list = JSON.parse(raw);
+    } catch {
+      list = [];
+    }
+  }
+
+  const entry: StoredJar = {
+    address: jarAddress,
+    createdAt: new Date().toISOString(),
+  };
+
+  // новая банка в начало, убираем дубликаты, ограничиваем список
+  list = [entry, ...list.filter((j) => j.address.toLowerCase() !== jarAddress.toLowerCase())];
+  list = list.slice(0, 50);
+
+  window.localStorage.setItem(key, JSON.stringify(list));
+  window.localStorage.setItem('lastJarAddress', jarAddress);
 }
 
 /* ========= тип для снапшота газа от CreateJar ========= */
@@ -36,6 +102,17 @@ type GasSnapshot = {
   currentGasGwei: number | null;
   capGasGwei: number | null;
 };
+
+/* ========= описание события JarCreated ========= */
+
+const JAR_CREATED_EVENT = {
+  type: 'event',
+  name: 'JarCreated',
+  inputs: [
+    { indexed: true, name: 'owner', type: 'address' },
+    { indexed: false, name: 'jar', type: 'address' },
+  ],
+} as const;
 
 /* ========= Fuse Tips ========= */
 
@@ -46,85 +123,85 @@ const FUSE_TIPS: FuseTipFn[] = [
     ratio && ratio < 1
       ? [
           'Your cap is below current gas, so some tips may fail until gas drops.',
-          'Bump it slightly if you want tips to go through right now.',
+          'Raise it a little if you want tips to go through right now.',
         ]
       : [
-          'Medium (≈1.5×) is the sweet spot when gas is low.',
-          'Balanced between safety during spikes and not overpaying.',
+          'Medium (≈1.5×) keeps a simple buffer above current gas.',
+          'Most days that is enough for tips to land without wasting much on fees.',
         ],
   ({ ratio }) =>
     ratio && ratio > 2
       ? [
-          'Your fuse cap is very high — tips almost never block, but you may overpay.',
-          'Use this only when reliability matters more than gas savings.',
+          'Your fuse cap is quite high. Tips almost never block, but gas can get expensive.',
+          'Use this when you care more about reliability than squeezing every wei.',
         ]
       : [
-          'Low (≈1.1×) is for gas geeks who want to squeeze every wei.',
-          'Expect occasional retries when the network gets noisy.',
+          'Low (≈1.1×) stays close to current gas.',
+          'Expect the occasional revert when the network moves more than usual.',
         ],
   () => [
-    'Think of the fuse as a safety ceiling for each supporter.',
-    'If gas spikes too hard, their tip reverts instead of silently burning ETH.',
+    'The fuse is a safety ceiling on gas for each tip.',
+    'If gas goes past it, the transaction reverts and the supporter keeps their ETH.',
   ],
   () => [
-    'Create jars with different caps for different flows: casual tips vs. high-priority drops.',
-    'Link the “safe” jar in your bio and keep the “aggressive” one for campaigns.',
+    'You can create more than one jar if you like.',
+    'Keep one for casual tips and another with a higher cap for busy moments.',
   ],
   ({ ratio }) =>
     ratio && ratio >= 1.3 && ratio <= 1.7
       ? [
-          'You are in the classic Medium zone — good for most days on Base.',
-          'Your supporters stay protected while tips keep flowing.',
+          'Your cap sits in the Medium range.',
+          'It leaves room for small spikes while still protecting supporters.',
         ]
       : [
-          'If you are not sure what to pick, Medium (≈1.5×) is the default.',
-          'You can always adjust the cap later by creating a new jar.',
+          'If you are not sure what to pick, Medium (≈1.5×) is a safe default.',
+          'You can always create a new jar later with a different cap.',
         ],
   () => [
-    'High (≈2×) is useful when you expect short, intense spikes.',
-    'Think NFT mints, launches, or coordinated tip storms.',
+    'High (≈2×) is for short windows where you expect gas to move fast.',
+    'Useful for mints, launches, or short campaigns where failed tips are more annoying than extra gas.',
   ],
   () => [
-    'Fuse cap doesn’t move funds — it only guards how expensive a tip is allowed to be.',
-    'If gas goes crazy, the transaction reverts and the supporter keeps their ETH.',
+    'The fuse cap never moves funds. It only limits how expensive a tip is allowed to be.',
+    'If gas goes wild, the transaction just reverts and the supporter keeps their ETH.',
   ],
   () => [
-    'Sharing a direct jar link is the fastest way to start receiving tips.',
-    'Your supporters don’t need to think about gas math — the fuse is already built in.',
+    'When you share a jar link, people can just tip.',
+    'You already baked your gas rules into that link.',
   ],
   () => [
-    'Want to experiment? Try one jar with Low, one with Medium, and compare flows.',
-    'Different audiences can tolerate different levels of volatility.',
+    'Want to experiment? Try one jar with Low and one with Medium.',
+    'Different projects can live with different gas risk.',
   ],
   () => [
-    'When gas on Base is ultra-cheap, even Medium looks generous.',
-    'That’s usually the best moment to promote your jar links.',
+    'When gas on Base is very cheap, even Medium feels generous.',
+    'That is usually a good moment to share jar links.',
   ],
   () => [
-    'Fuse logic lives inside the jar contract — no external oracles or off-chain magic.',
-    'Everything is enforced directly onchain by a simple condition.',
+    'Fuse logic lives inside the jar contract.',
+    'It is just a simple onchain condition that checks gas price before a tip goes through.',
   ],
   () => [
-    'If a supporter keeps failing to tip, ask them to try again later — gas might be above your cap.',
-    'Or share another jar with a slightly higher fuse just for them.',
+    'If someone keeps failing to tip, gas might be above your cap.',
+    'You can share another jar with a slightly higher fuse just for them.',
   ],
   () => [
-    'You can treat jars as “channels”: one per project, event, or persona.',
-    'Different fuse settings = different risk profiles for each channel.',
+    'You can treat jars as channels: one per project, event, or persona.',
+    'Different fuse settings give each channel its own risk profile.',
   ],
   () => [
-    'Most users never think about gas — Fuse Tip Jar does it for them.',
-    'You, as the creator, set the rules once and then just share the link.',
+    'Most people never look at gas numbers.',
+    'Here you set a cap once and then reuse the same jar link.',
   ],
   () => [
-    'If you like calm, predictable flows, stay close to the current gas.',
-    'If you like chaos and speed, push the cap higher and ride the spikes.',
+    'If you want predictable costs, stay close to the current gas price.',
+    'If you are okay paying more sometimes, raise the cap and give tips more room to land.',
   ],
 ];
 
 export default function Page() {
   const mounted = useMounted();
-  const { address } = useAccount();
+  const { isConnected, address } = useAccount();
   const chainId = useChainId();
   const router = useRouter();
   const publicClient = usePublicClient();
@@ -136,13 +213,10 @@ export default function Page() {
   const [isValidJar, setIsValidJar] = useState<boolean | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
 
-  /* ===== Sidebar stats ===== */
+  /* ===== Sidebar stats (local lastAddress) ===== */
 
   const [stats, setStats] = useState<JarStats>(() => emptyStats());
   const [lastUpdate, setLastUpdate] = useState('just now');
-
-  // для блока "Open a Jar" и fallback для Last created
-  const [lastCreatedLocal, setLastCreatedLocal] = useState<string | null>(null);
 
   /* ===== Fuse gas snapshot от CreateJar ===== */
 
@@ -154,66 +228,112 @@ export default function Page() {
   /* ===== Fuse Tip rotation state ===== */
 
   const [tipIndex, setTipIndex] = useState(0);
-  const [tipFading, setTipFading] = useState(false);
 
-  /* ===== загрузка lastJarAddress из localStorage для Open-a-jar ===== */
+  /* ===== Банки из API для корректного счётчика ===== */
 
-  useEffect(() => {
-    if (!mounted) return;
-    try {
-      const v = window.localStorage.getItem('lastJarAddress');
-      if (v) setLastCreatedLocal(v);
-    } catch {
-      // ignore
-    }
-  }, [mounted]);
-
-  /* ===== загрузка статов через /api/jars ===== */
+  const [jarRows, setJarRows] = useState<JarRow[]>([]);
 
   useEffect(() => {
     if (!mounted) return;
-
     if (!address) {
-      setStats(emptyStats());
+      setJarRows([]);
       return;
     }
 
-    let cancelled = false;
-
     (async () => {
       try {
-        const res = await fetch(`/api/jars?owner=${address}`, { cache: 'no-store' });
-        const ctype = res.headers.get('content-type') || '';
-        if (!ctype.includes('application/json')) return;
-
-        const data = await res.json();
-        if (!res.ok || !data?.ok) return;
-
-        const rows: { jar: string }[] = data.rows || [];
-        if (cancelled) return;
-
-        setStats({
-          count: rows.length,
-          lastAddress: rows[0]?.jar ?? null,
-        });
-        setLastUpdate('just now');
+        const r = await fetch(`/api/jars?owner=${address}`, { cache: 'no-store' });
+        const ctype = r.headers.get('content-type') || '';
+        if (!ctype.includes('application/json')) {
+          const text = await r.text();
+          console.error('Unexpected /api/jars response for stats', text.slice(0, 200));
+          setJarRows([]);
+          return;
+        }
+        const j = await r.json();
+        if (!r.ok || !j?.ok) {
+          console.error('Failed to load jars for stats', j?.error);
+          setJarRows([]);
+          return;
+        }
+        setJarRows(j.rows || []);
       } catch (e) {
-        console.error('Failed to load jar stats', e);
+        console.error('Failed to load jars for stats', e);
+        setJarRows([]);
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
   }, [mounted, address]);
 
-  /* ===== таймер для lastUpdate (чисто косметика) ===== */
+  const normalizedJars = useMemo(() => normalizeJars(jarRows), [jarRows]);
+
+  /* ===== загрузка локальных статов при маунте/смене кошелька ===== */
+
+  useEffect(() => {
+    if (!mounted) return;
+    setStats(readJarStats(address));
+  }, [mounted, address]);
+
+  /* ===== таймер для lastUpdate ===== */
 
   useEffect(() => {
     setLastUpdate('just now');
     const id = setInterval(() => setLastUpdate('a few seconds ago'), 30_000);
     return () => clearInterval(id);
   }, []);
+
+  /* ===== backfill старых банок из фабрики (для local lastAddress) ===== */
+
+  useEffect(() => {
+    if (!mounted) return;
+    if (!address) return;
+    if (!publicClient) return;
+    if (stats.count > 0) return; // уже есть локальные статы
+
+    const factory = process.env.NEXT_PUBLIC_FACTORY_BASE_MAINNET as `0x${string}` | undefined;
+    if (!factory) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const logs = await publicClient.getLogs({
+          address: factory,
+          event: JAR_CREATED_EVENT,
+          args: { owner: address as `0x${string}` },
+          fromBlock: 0n,
+          toBlock: 'latest',
+        });
+
+        if (cancelled || !logs.length) return;
+
+        const seen: Set<string> = new Set();
+        const jars: string[] = [];
+
+        for (const log of logs.reverse()) {
+          const jar = (log as any).args?.jar as string | undefined;
+          if (!jar) continue;
+          const key = jar.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          jars.unshift(jar);
+        }
+
+        if (!jars.length) return;
+
+        jars.forEach((jar) => recordJarForWallet(address, jar));
+        if (!cancelled) {
+          setStats(readJarStats(address));
+          setLastUpdate('just now');
+        }
+      } catch (e) {
+        console.error('Failed to backfill jar stats', e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted, address, publicClient, stats.count]);
 
   /* ===== логика Open-a-jar ===== */
 
@@ -259,20 +379,21 @@ export default function Page() {
   }, [openInput, publicClient, isAddrFormatOk]);
 
   const onJarCreated = (addr: string) => {
-    // сохраняем последний созданный для "Open a Jar"
-    try {
-      window.localStorage.setItem('lastJarAddress', addr);
-    } catch {
-      // ignore
-    }
-    setLastCreatedLocal(addr);
-
-    // оптимистично обновляем статы (потом всё равно подтянется из /api)
-    setStats((prev) => ({
-      count: prev.count + 1,
-      lastAddress: addr,
-    }));
+    recordJarForWallet(address, addr);
+    setStats(readJarStats(address));
     setLastUpdate('just now');
+    // обновим список банок в stats из API
+    if (address) {
+      (async () => {
+        try {
+          const r = await fetch(`/api/jars?owner=${address}`, { cache: 'no-store' });
+          const j = await r.json();
+          if (r.ok && j?.ok) setJarRows(j.rows || []);
+        } catch {
+          // тихо игнорируем
+        }
+      })();
+    }
   };
 
   const canOpen = isAddrFormatOk && isValidJar === true && !validating;
@@ -297,21 +418,12 @@ export default function Page() {
   }, [tipIndex, ratio]);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setTipFading(true);
-      setTimeout(() => {
-        setTipIndex((prev) => (prev + 1) % FUSE_TIPS.length);
-        setTipFading(false);
-      }, 400);
-    }, 20_000);
-
+    const interval = setInterval(
+      () => setTipIndex((prev) => (prev + 1) % FUSE_TIPS.length),
+      20_000,
+    );
     return () => clearInterval(interval);
   }, []);
-
-  /* ===== производные значения ===== */
-
-  const lastCreatedForOpen = lastCreatedLocal || stats.lastAddress;
-  const lastCreatedForStats = stats.lastAddress || lastCreatedLocal;
 
   /* ===== RENDER ===== */
 
@@ -344,13 +456,16 @@ export default function Page() {
         </header>
 
         {/* Create Jar */}
-        <section className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm">
+        <section className="relative rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm">
           <h2 className="mb-4 text-center text-xl font-semibold">Create Jar</h2>
           {mounted && (
-            <CreateJar
-              onCreated={onJarCreated}
-              onGasSnapshotChange={setGasSnapshot}
-            />
+            <>
+              <FuseTour />
+              <CreateJar
+                onCreated={onJarCreated}
+                onGasSnapshotChange={setGasSnapshot}
+              />
+            </>
           )}
         </section>
 
@@ -368,7 +483,7 @@ export default function Page() {
           <div className="mt-2 min-h-[1.5rem] text-center text-sm">
             {!openInput ? (
               <p className="text-neutral-400">
-                Enter a specific jar address to open its public page (direct access).
+                Paste a jar address to open its public page.
               </p>
             ) : !isAddrFormatOk ? (
               <p className="text-red-300">Invalid address format.</p>
@@ -377,7 +492,7 @@ export default function Page() {
             ) : isValidJar === false ? (
               <p className="text-red-300">{openError}</p>
             ) : isValidJar === true ? (
-              <p className="text-emerald-300">Looks good — this is a TipJar. You can open it.</p>
+              <p className="text-emerald-300">Looks good. This is a TipJar on Base.</p>
             ) : null}
           </div>
 
@@ -391,15 +506,15 @@ export default function Page() {
             </button>
           </div>
 
-          {mounted && lastCreatedForOpen && (
+          {mounted && stats.lastAddress && (
             <p className="mt-3 text-center text-xs text-neutral-500">
               Last created:{' '}
               <button
                 className="font-mono underline decoration-dotted underline-offset-2 hover:text-neutral-300"
-                onClick={() => setOpenInput(lastCreatedForOpen)}
+                onClick={() => setOpenInput(stats.lastAddress ?? '')}
                 title="Click to paste last created"
               >
-                {lastCreatedForOpen}
+                {stats.lastAddress}
               </button>
             </p>
           )}
@@ -432,14 +547,14 @@ export default function Page() {
               <p>
                 Jars you created:{' '}
                 <span className="text-white">
-                  {stats.count > 0 ? stats.count : '—'}
+                  {normalizedJars.length > 0 ? normalizedJars.length : '—'}
                 </span>
               </p>
               <p>
                 Last created:{' '}
                 <span className="font-mono text-neutral-200">
-                  {lastCreatedForStats
-                    ? `${lastCreatedForStats.slice(0, 6)}…${lastCreatedForStats.slice(-4)}`
+                  {normalizedJars[0]
+                    ? `${normalizedJars[0].jar.slice(0, 6)}…${normalizedJars[0].jar.slice(-4)}`
                     : '—'}
                 </span>
               </p>
@@ -454,13 +569,20 @@ export default function Page() {
             <h3 className="mb-3 text-center text-base font-semibold text-white">
               Fuse Tip 💡
             </h3>
-            <div
-              className={`min-h-[72px] space-y-1 transition-opacity duration-300 ${
-                tipFading ? 'opacity-0' : 'opacity-100'
-              }`}
-            >
-              <p>{fuseTipLines[0]}</p>
-              <p>{fuseTipLines[1]}</p>
+            <div className="min-h-[72px]">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={tipIndex}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.25, ease: 'easeOut' }}
+                  className="space-y-1"
+                >
+                  <p>{fuseTipLines[0]}</p>
+                  <p>{fuseTipLines[1]}</p>
+                </motion.div>
+              </AnimatePresence>
             </div>
           </section>
         </div>

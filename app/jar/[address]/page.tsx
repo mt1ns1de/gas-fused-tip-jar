@@ -6,7 +6,13 @@ import { useParams } from 'next/navigation';
 import { useAccount, usePublicClient } from 'wagmi';
 import CursorAura from '@/components/CursorAura';
 import WalletButton from '@/components/WalletButton';
-import { decodeEventLog, formatEther, Hex, parseEther, parseAbiItem } from 'viem';
+import {
+  formatEther,
+  formatGwei,
+  Hex,
+  parseEther,
+  parseAbiItem,
+} from 'viem';
 import { TIPJAR_ABI } from '@/lib/abiTipJar';
 import { getPrimaryName } from '@/lib/identity';
 import Avatar from '@/components/Avatar';
@@ -46,7 +52,12 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 500): 
       lastErr = e;
       const msg = String(e?.message || '');
       const code = Number(e?.code);
-      if (i < attempts - 1 && (code === -32011 || /backend.+healthy/i.test(msg) || /timeout/i.test(msg))) {
+      if (
+        i < attempts - 1 &&
+        (code === -32011 ||
+          /backend.+healthy/i.test(msg) ||
+          /timeout/i.test(msg))
+      ) {
         await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
         continue;
       }
@@ -92,11 +103,18 @@ function getCachedOwner(jar: string): string | null {
 
 /** ===== Log filter + rate-limit helpers ===== */
 
-const TIPPED_EVENT = parseAbiItem('event Tipped(address from, uint256 amount, string message)');
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms + Math.random() * 200));
+// ВАЖНО: здесь добавили indexed, как в реальном событии контракта
+const TIPPED_EVENT = parseAbiItem(
+  'event Tipped(address indexed from, uint256 amount, string message)'
+);
+
+const sleep = (ms: number) =>
+  new Promise((r) => setTimeout(r, ms + Math.random() * 200));
 let tipsLoadingLock = false;
 const isPageVisible = () =>
-  typeof document !== 'undefined' ? document.visibilityState === 'visible' : true;
+  typeof document !== 'undefined'
+    ? document.visibilityState === 'visible'
+    : true;
 
 /** ===== Page ===== */
 
@@ -131,11 +149,16 @@ export default function JarPublicPage() {
   const [owner, setOwner] = useState<string | null>(null);
   const [jarBalance, setJarBalance] = useState<bigint | null>(null);
   const [withdrawing, setWithdrawing] = useState(false);
-  const canWithdraw = !!owner && !!address && owner.toLowerCase() === address.toLowerCase();
+  const canWithdraw =
+    !!owner && !!address && owner.toLowerCase() === address.toLowerCase();
 
   // ===== локальные ошибки (красиво, не навязчиво) =====
   const [tipError, setTipError] = useState<string | null>(null);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
+
+  // ===== fuse / gas panel =====
+  const [jarCapGwei, setJarCapGwei] = useState<number | null>(null);
+  const [netGasGwei, setNetGasGwei] = useState<number | null>(null);
 
   // ===== helpers =====
   const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
@@ -158,14 +181,17 @@ export default function JarPublicPage() {
       try {
         const r = await fetch(
           'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
-          { cache: 'no-store' }
+          { cache: 'no-store' },
         );
         const j = await r.json();
         const price = j?.ethereum?.usd as number | undefined;
         if (alive && price) {
           setEthUsd(price);
           try {
-            localStorage.setItem('eth_usd_price', JSON.stringify({ price, ts: Date.now() }));
+            localStorage.setItem(
+              'eth_usd_price',
+              JSON.stringify({ price, ts: Date.now() }),
+            );
           } catch {}
         }
       } catch {
@@ -179,9 +205,12 @@ export default function JarPublicPage() {
       }
     })();
     const id = setInterval(() => {
-      fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd', {
-        cache: 'no-store',
-      })
+      fetch(
+        'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
+        {
+          cache: 'no-store',
+        },
+      )
         .then((r) => r.json())
         .then((j) => {
           const p = j?.ethereum?.usd as number | undefined;
@@ -230,8 +259,9 @@ export default function JarPublicPage() {
 
   /** ===== Send tip ===== */
   const canSend = useMemo(
-    () => isConnected && !!ethAmount && Number(ethAmount) > 0 && !cooldown,
-    [isConnected, ethAmount, cooldown]
+    () =>
+      isConnected && !!ethAmount && Number(ethAmount) > 0 && !cooldown,
+    [isConnected, ethAmount, cooldown],
   );
 
   const onSend = async () => {
@@ -253,16 +283,62 @@ export default function JarPublicPage() {
         // parallel refresh
         void loadTips(true);
         void refreshOwnerPanel(true);
+        void refreshGasPanel(true);
       } else {
-        setTipError(res.error || 'Не удалось отправить чаевые.');
+        setTipError(res.error || 'Failed to send tip.');
       }
     } catch (e: any) {
-      setTipError(e?.message || 'Не удалось отправить чаевые.');
+      setTipError(e?.message || 'Failed to send tip.');
     } finally {
       setPending(false);
       setTimeout(() => setCooldown(false), 1200);
     }
   };
+
+  /** ===== Fuse ratio + UX text ===== */
+  const fuseRatio = useMemo(() => {
+    if (
+      jarCapGwei === null ||
+      netGasGwei === null ||
+      jarCapGwei <= 0 ||
+      netGasGwei <= 0
+    )
+      return null;
+    return jarCapGwei / netGasGwei;
+  }, [jarCapGwei, netGasGwei]);
+
+  const fuseBadge = useMemo(() => {
+    if (!fuseRatio) return null;
+
+    if (fuseRatio < 1) {
+      return {
+        label: 'Cap below gas',
+        className:
+          'border-amber-400/50 bg-amber-500/10 text-amber-100',
+        description:
+          'Gas is currently above this jar’s fuse cap. Some tips may revert until fees cool down.',
+      };
+    }
+
+    if (fuseRatio <= 1.7) {
+      return {
+        label: 'Balanced fuse',
+        className:
+          'border-emerald-400/40 bg-emerald-500/10 text-emerald-100',
+        description:
+          'Fuse cap sits in a balanced zone. Supporters stay protected while tips usually go through.',
+      };
+    }
+
+    return {
+      label: 'Loose fuse',
+      className: 'border-sky-400/40 bg-sky-500/10 text-sky-100',
+      description:
+        'Fuse cap is well above current gas. Tips are unlikely to fail on gas, but fees can be higher if gas spikes later.',
+    };
+  }, [fuseRatio]);
+
+  const fuseDescription = fuseBadge?.description;
 
   /** ===== Tips loader (event filter + backoff + visibility) ===== */
   async function loadTips(silent = false) {
@@ -275,18 +351,17 @@ export default function JarPublicPage() {
     try {
       const latest = await withRetry(() => publicClient.getBlockNumber());
       let to = latest;
-      let window = 4_000n; // smaller window to reduce provider load
+      let window = 4_000n;
       let chunks = 0;
       const maxChunks = 3;
       const acc: TipItem[] = [];
 
-      let backoffMs = 600; // start backoff
+      let backoffMs = 600;
 
       while (to >= 0n && acc.length < 20 && chunks < maxChunks) {
         const from = to > window ? to - window : 0n;
 
         try {
-          // Filter by the exact event on RPC side to avoid scanning unrelated logs
           const logs = await publicClient.getLogs({
             address: jar,
             fromBlock: from,
@@ -297,43 +372,55 @@ export default function JarPublicPage() {
           for (const lg of logs) {
             try {
               const ev = lg as unknown as {
-                args?: { from?: `0x${string}`; amount?: bigint; message?: string };
+                args?: {
+                  from?: `0x${string}`;
+                  amount?: bigint;
+                  message?: string;
+                };
                 transactionHash?: Hex;
                 blockNumber?: bigint;
               };
 
               const args = ev.args || {};
-              const fromAddr = (args.from ||
-                '0x0000000000000000000000000000000000000000') as `0x${string}`;
-              const amountBI = (args.amount ?? 0n) as bigint;
+              const fromAddr = args.from as `0x${string}` | undefined;
+              const amountBI = args.amount as bigint | undefined;
+
+              // если не смогли декодировать — пропускаем, а не подставляем нули
+              if (!fromAddr || amountBI === undefined) continue;
+
               const msg = sanitizeMessage(args.message ?? '');
 
               acc.push({
-                txHash: (ev as any).transactionHash || ('0x' as Hex),
+                txHash: ev.transactionHash || ('0x' as Hex),
                 from: fromAddr,
                 amountWei: amountBI,
                 message: msg,
-                blockNumber: (ev as any).blockNumber ?? 0n,
+                blockNumber: ev.blockNumber ?? 0n,
               });
             } catch {
               // skip rare decoding anomalies
             }
           }
 
-          // reset backoff if success
           backoffMs = 600;
         } catch (err: any) {
           const msg = String(err?.message || '');
           const code = Number(err?.code);
-          // over rate limit → halve window, wait, retry
-          if (msg.includes('over rate limit') || code === -32016 || code === 429) {
+          if (
+            msg.includes('over rate limit') ||
+            code === -32016 ||
+            code === 429
+          ) {
             window = window / 2n || 1n;
             await sleep(backoffMs);
             backoffMs = Math.min(backoffMs * 2, 5000);
             continue;
           }
-          // provider unstable/timeouts
-          if (msg.includes('no backend is currently healthy') || code === -32011 || /timeout/i.test(msg)) {
+          if (
+            msg.includes('no backend is currently healthy') ||
+            code === -32011 ||
+            /timeout/i.test(msg)
+          ) {
             window = window / 2n || 1n;
             await sleep(backoffMs);
             backoffMs = Math.min(backoffMs * 2, 5000);
@@ -360,7 +447,6 @@ export default function JarPublicPage() {
   async function refreshOwnerPanel(silent = false) {
     if (!publicClient) return;
 
-    // quick render from cache
     const cached = getCachedOwner(jar);
     if (cached && !owner) {
       setOwner(cached);
@@ -383,7 +469,10 @@ export default function JarPublicPage() {
 
       const balancePromise = publicClient.getBalance({ address: jar });
 
-      const [ownRes, balRes] = await Promise.allSettled([ownerPromise, balancePromise]);
+      const [ownRes, balRes] = await Promise.allSettled([
+        ownerPromise,
+        balancePromise,
+      ]);
 
       if (ownRes.status === 'fulfilled') {
         const own = ownRes.value;
@@ -398,29 +487,54 @@ export default function JarPublicPage() {
     }
   }
 
+  /** ===== Jar fuse + current gas ===== */
+  async function refreshGasPanel(silent = false) {
+    if (!publicClient) return;
+
+    try {
+      const [capWei, baseWei] = await Promise.all([
+        publicClient.readContract({
+          address: jar,
+          abi: TIPJAR_ABI as any,
+          functionName: 'maxGasPriceWei',
+          args: [] as const,
+        }),
+        publicClient.getGasPrice(),
+      ]);
+
+      setJarCapGwei(Number(formatGwei(capWei as bigint)));
+      setNetGasGwei(Number(formatGwei(baseWei)));
+    } catch (e) {
+      if (!silent) console.error('Gas panel refresh failed:', e);
+    }
+  }
+
   useEffect(() => {
     let alive = true;
 
-    // start both in parallel; owner first for faster "owner panel" feel
     void refreshOwnerPanel(true);
+    void refreshGasPanel(true);
     void loadTips();
 
-    // separate intervals; skip when tab hidden
     const idOwner = setInterval(() => {
-      if (!alive) return;
-      if (!isPageVisible()) return;
+      if (!alive || !isPageVisible()) return;
       void refreshOwnerPanel(true);
     }, 20_000);
 
+    const idGas = setInterval(() => {
+      if (!alive || !isPageVisible()) return;
+      void refreshGasPanel(true);
+    }, 30_000);
+
     const idFeed = setInterval(() => {
-      if (!alive) return;
-      if (!isPageVisible()) return;
+      if (!alive || !isPageVisible()) return;
       void loadTips(true);
     }, 45_000);
 
     const onVisibility = () => {
       if (isPageVisible()) {
         void refreshOwnerPanel(true);
+        void refreshGasPanel(true);
         void loadTips(true);
       }
     };
@@ -429,6 +543,7 @@ export default function JarPublicPage() {
     return () => {
       alive = false;
       clearInterval(idOwner);
+      clearInterval(idGas);
       clearInterval(idFeed);
       document.removeEventListener('visibilitychange', onVisibility);
     };
@@ -438,9 +553,13 @@ export default function JarPublicPage() {
   /** ===== resolve names (ens/basename) ===== */
   useEffect(() => {
     const lower = (m: Record<string, string | null>) =>
-      Object.fromEntries(Object.entries(m).map(([k, v]) => [k.toLowerCase(), v]));
+      Object.fromEntries(
+        Object.entries(m).map(([k, v]) => [k.toLowerCase(), v]),
+      );
     const known = lower(nameMap);
-    const unique = Array.from(new Set(tips.map((t) => t.from.toLowerCase()))).slice(0, 25);
+    const unique = Array.from(
+      new Set(tips.map((t) => t.from.toLowerCase())),
+    ).slice(0, 25);
     const missing = unique.filter((a) => !(a in known));
     if (missing.length === 0) return;
 
@@ -452,7 +571,7 @@ export default function JarPublicPage() {
           const addrL = queue.shift()!;
           const addr = addrL as `0x${string}`;
           const name = await getPrimaryName(addr);
-          updates[addrL] = name; // .eth / .base / null
+          updates[addrL] = name;
         }
       });
       await Promise.all(workers);
@@ -470,7 +589,8 @@ export default function JarPublicPage() {
   };
 
   const publicLink = useMemo(() => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const origin =
+      typeof window !== 'undefined' ? window.location.origin : '';
     return `${origin}/jar/${jar}`;
   }, [jar]);
 
@@ -498,36 +618,82 @@ export default function JarPublicPage() {
           Network: 8453 (Base Mainnet)
           <br />
           Jar{' '}
-          <span title={jar} className="inline-block max-w-[52ch] truncate align-bottom">
+          <span
+            title={jar}
+            className="inline-block max-w-[52ch] truncate align-bottom"
+          >
             {jar}
           </span>
           <button
             type="button"
             onClick={onCopy}
-            className="ml-2 rounded-md bg-white/10 px-2 py-0.5 text-xs hover:bg-white/15"
+            className="ml-2 rounded-md bg.white/10 px-2 py-0.5 text-xs hover:bg-white/15"
           >
             {copied ? 'Copied ✓' : 'Copy'}
           </button>
         </p>
 
+        {/* Fuse / gas state strip */}
+        {jarCapGwei !== null && (
+          <section className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-neutral-200 backdrop-blur-sm sm:text-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-neutral-300">
+                  <span className="font-semibold text-white">
+                    Jar fuse:
+                  </span>{' '}
+                  cap {jarCapGwei.toFixed(3)} gwei
+                  {netGasGwei !== null && (
+                    <>
+                      {' · '}current base fee {netGasGwei.toFixed(3)} gwei
+                    </>
+                  )}
+                </div>
+                {fuseDescription && (
+                  <div className="mt-1 text-[11px] text-neutral-400 sm:text-xs">
+                    {fuseDescription}
+                  </div>
+                )}
+              </div>
+              {fuseBadge && (
+                <span
+                  className={
+                    'inline-flex items-center rounded-full border px-3 py-1 text-[11px] sm:text-xs ' +
+                    fuseBadge.className
+                  }
+                >
+                  {fuseBadge.label}
+                </span>
+              )}
+            </div>
+          </section>
+        )}
+
         {/* === OWNER PANEL (visible only to owner) === */}
         {canWithdraw && (
           <section className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm">
             <div className="mb-2 flex items-center gap-2">
-              <span className="rounded bg-white/10 px-2 py-0.5 text-xs text-neutral-300">Owner panel</span>
+              <span className="rounded bg-white/10 px-2 py-0.5 text-xs text-neutral-300">
+                Owner panel
+              </span>
             </div>
 
             <div className="mb-3 flex flex-wrap items-center gap-4 text-sm">
               <div>
                 <div className="text-neutral-400">Owner</div>
-                <div className="max-w-[56ch] truncate" title={owner || '—'}>
+                <div
+                  className="max-w-[56ch] truncate"
+                  title={owner || '—'}
+                >
                   {owner || '—'}
                 </div>
               </div>
               <div>
                 <div className="text-neutral-400">Jar balance</div>
                 <div>
-                  {jarBalance === null ? '—' : `${Number(formatEther(jarBalance)).toFixed(6)} ETH`}
+                  {jarBalance === null
+                    ? '—'
+                    : `${Number(formatEther(jarBalance)).toFixed(6)} ETH`}
                 </div>
               </div>
               <div className="ml-auto flex items-center gap-2">
@@ -548,12 +714,16 @@ export default function JarPublicPage() {
                       setWithdrawing(true);
                       const res = await withdrawFromJar(jar);
                       if (!res.success) {
-                        setWithdrawError(res.error || 'Не удалось вывести средства.');
+                        setWithdrawError(
+                          res.error || 'Failed to withdraw funds.',
+                        );
                       } else {
                         await refreshOwnerPanel(true);
                       }
                     } catch (e: any) {
-                      setWithdrawError(e?.message || 'Не удалось вывести средства.');
+                      setWithdrawError(
+                        e?.message || 'Failed to withdraw funds.',
+                      );
                     } finally {
                       setWithdrawing(false);
                     }
@@ -567,7 +737,6 @@ export default function JarPublicPage() {
               </div>
             </div>
 
-            {/* компактная подсказка об ошибке прямо под кнопками */}
             {withdrawError && (
               <div className="mt-2 rounded-lg border border-red-400/30 bg-red-950/40 px-3 py-1 text-xs text-red-200">
                 <div className="flex items-start gap-2">
@@ -587,7 +756,9 @@ export default function JarPublicPage() {
 
         {/* Form card */}
         <section className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm">
-          <label className="mb-2 block text-sm font-medium">Amount (ETH)</label>
+          <label className="mb-2 block text-sm font-medium">
+            Amount (ETH)
+          </label>
           <div className="mb-2 flex items-center gap-2">
             <input
               className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 outline-none ring-0 focus:border-[#2563eb]"
@@ -596,7 +767,9 @@ export default function JarPublicPage() {
               inputMode="decimal"
               placeholder="0.0001"
             />
-            <div className="shrink-0 text-sm text-neutral-400">{usdApprox ?? ' '}</div>
+            <div className="shrink-0 text-sm text-neutral-400">
+              {usdApprox ?? ' '}
+            </div>
           </div>
 
           <div className="mb-4 flex flex-wrap gap-2">
@@ -614,7 +787,9 @@ export default function JarPublicPage() {
             ))}
           </div>
 
-          <label className="mb-2 block text-sm font-medium">Message (optional)</label>
+          <label className="mb-2 block text-sm font-medium">
+            Message (optional)
+          </label>
           <textarea
             className="mb-4 h-32 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 outline-none ring-0 focus:border-[#2563eb]"
             value={message}
@@ -629,10 +804,13 @@ export default function JarPublicPage() {
             aria-busy={pending}
             className="rounded-xl bg-[#0052FF] px-5 py-2.5 font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-50 hover:opacity-90 active:opacity-80"
           >
-            {pending ? 'Sending…' : cooldown ? 'Please wait…' : 'Send Tip'}
+            {pending
+              ? 'Sending…'
+              : cooldown
+              ? 'Please wait…'
+              : 'Send Tip'}
           </button>
 
-          {/* мягкая локальная ошибка формы — сразу под кнопкой */}
           {tipError && (
             <div className="mt-3 rounded-lg border border-red-400/30 bg-red-950/40 px-3 py-2 text-sm text-red-200">
               <div className="flex items-start gap-2">
@@ -664,11 +842,14 @@ export default function JarPublicPage() {
           </div>
 
           {tips.length === 0 ? (
-            <div className="text-sm text-neutral-400">No tips yet — be the first!</div>
+            <div className="text-sm text-neutral-400">
+              No tips yet. You can be the first one.
+            </div>
           ) : (
             <ul className="divide-y divide-white/10">
               {tips.map((t) => {
-                const name = nameMap[t.from.toLowerCase()] || null;
+                const name =
+                  nameMap[t.from.toLowerCase()] || null;
                 return (
                   <li key={`${t.txHash}`} className="py-3">
                     <div className="flex items-start gap-3">
@@ -678,9 +859,14 @@ export default function JarPublicPage() {
                           <div className="text-sm">
                             <div className="font-medium">
                               {fmtEth(t.amountWei)} ETH
-                              <span className="ml-2 text-neutral-400">({fmtUsd(t.amountWei)})</span>
+                              <span className="ml-2 text-neutral-400">
+                                ({fmtUsd(t.amountWei)})
+                              </span>
                               {t.message && (
-                                <span className="text-neutral-400"> — “{t.message}”</span>
+                                <span className="text-neutral-400">
+                                  {' '}
+                                  — “{t.message}”
+                                </span>
                               )}
                             </div>
                             <div className="mt-0.5 text-xs text-neutral-400">
@@ -688,7 +874,8 @@ export default function JarPublicPage() {
                               <span className="rounded bg-white/5 px-1.5 py-0.5">
                                 {displayName(t.from)}
                               </span>
-                              {' · '}Block #{t.blockNumber.toString()}
+                              {' · '}Block #
+                              {t.blockNumber.toString()}
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
@@ -696,7 +883,7 @@ export default function JarPublicPage() {
                               href={`https://basescan.org/tx/${t.txHash}`}
                               target="_blank"
                               rel="noreferrer"
-                              className="rounded-md bg-white/10 px-2 py-1 text-xs hover:bg-white/15 underline"
+                              className="rounded-md bg-white/10 px-2 py-1 text-xs underline hover:bg-white/15"
                             >
                               View tx
                             </a>
