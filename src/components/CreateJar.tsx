@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useAccount, usePublicClient } from 'wagmi';
-import { type Hex, formatGwei, formatEther, parseGwei } from 'viem';
+import { type Hex, formatGwei, parseGwei } from 'viem';
 import { base } from 'viem/chains';
 import { switchChain, getChainId } from 'wagmi/actions';
 import { config } from '@/lib/wagmi';
@@ -11,6 +11,8 @@ import { createJar } from '@/actions/createJar.client';
 import ShareModal from '@/components/ShareModal';
 import JarVisual from '@/components/JarVisual';
 import { getSafeGasPrice } from '@/lib/gas';
+import GasProfileMeter from '@/components/GasProfileMeter';
+import MascotBadge from '@/components/MascotBadge';
 
 type GasSnapshot = {
   currentGasGwei: number | null;
@@ -93,15 +95,22 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
     }
   }, [inputGwei]);
 
-  // Репортим в родителя снапшот по gas / cap,
-  // чтобы сверстать динамичный Fuse Tip
+  // примерные значения для блока Example
+  const exampleGas =
+    current && Number.isFinite(current) && current > 0 ? current : null;
+  const exampleMediumCap = exampleGas !== null ? exampleGas * 1.5 : null;
+
+  // прокидываем снапшот газа наверх, чтобы страница могла считать ratio
   useEffect(() => {
     if (!onGasSnapshotChange) return;
-    const cur = current || 0;
-    const cap = Number(inputGwei || '0');
+    const cur =
+      current && Number.isFinite(current) && current > 0 ? current : null;
+    const capVal =
+      inputGwei && Number(inputGwei) > 0 ? Number(inputGwei) : null;
+
     onGasSnapshotChange({
-      currentGasGwei: cur > 0 ? cur : null,
-      capGasGwei: cap > 0 ? cap : null,
+      currentGasGwei: cur,
+      capGasGwei: capVal,
     });
   }, [current, inputGwei, onGasSnapshotChange]);
 
@@ -151,11 +160,14 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
 
       if (res.txHash) setTxHash(res.txHash as Hex);
       if (res.jarAddress) {
-        setJarAddress(res.jarAddress);
+        const addr = res.jarAddress as `0x${string}`;
+        setJarAddress(addr);
         try {
-          localStorage.setItem('lastJarAddress', res.jarAddress);
-        } catch {}
-        onCreated?.(res.jarAddress as `0x${string}`);
+          localStorage.setItem('lastJarAddress', addr);
+        } catch {
+          /* ignore */
+        }
+        onCreated?.(addr);
         setShowCelebration(true);
       }
     } catch (e: any) {
@@ -169,7 +181,9 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
   };
 
   const explorerTx = txHash ? `https://basescan.org/tx/${txHash}` : undefined;
-  const explorerAddr = jarAddress ? `https://basescan.org/address/${jarAddress}` : undefined;
+  const explorerAddr = jarAddress
+    ? `https://basescan.org/address/${jarAddress}`
+    : undefined;
   const publicPage = jarAddress ? `/jar/${jarAddress}` : undefined;
 
   const onGweiChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
@@ -180,9 +194,14 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
 
   /** ===== RENDER ===== */
   return (
-    // обёртка для абсолютной левой панели
+    // обёртка для абсолютной левой панели и маскота
     <div className="relative">
-      {/* LEFT FLOATING PANEL */}
+      {/* Mascot в верхнем левом углу карточки Create Jar */}
+      <div className="absolute left-0 -top-10 hidden sm:block">
+        <MascotBadge />
+      </div>
+
+      {/* LEFT FLOATING PANEL — компактный Example с реальными числами */}
       <div className="pointer-events-auto absolute -left-[320px] top-2 hidden w-[280px] lg:block">
         <button
           type="button"
@@ -191,13 +210,16 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
           className="w-full select-none rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-neutral-200 shadow-sm transition hover:bg-white/10"
         >
           <span className="inline-flex items-center gap-1">
-            How it works
-            <span className={`transition-transform ${showHow ? 'rotate-180' : ''}`}>▾</span>
+            Example
+            <span
+              className={`transition-transform ${showHow ? 'rotate-180' : ''}`}
+            >
+              ▾
+            </span>
           </span>
         </button>
 
-        {/* Плавное раскрытие без рывков:
-            анимируем только max-height и opacity; отступ вынесен во внутренний .pt-3 */}
+        {/* Плавное раскрытие */}
         <div
           className={[
             'overflow-hidden',
@@ -210,29 +232,51 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
             <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-neutral-300 backdrop-blur-sm">
               <ul className="list-disc space-y-2 pl-5">
                 <li>
-                  <span className="font-medium">Cap</span> is the max gas price this jar accepts.
+                  {exampleGas !== null ? (
+                    <>
+                      Gas is{' '}
+                      <span className="font-mono">
+                        {exampleGas.toFixed(3)}
+                      </span>{' '}
+                      gwei now.
+                    </>
+                  ) : (
+                    'Gas is loading…'
+                  )}
                 </li>
+                <li>You choose Medium (1.5×).</li>
                 <li>
-                  If network gas is higher than the cap, a tip reverts with{' '}
-                  <span className="italic">Gas price too high</span>.
+                  {exampleMediumCap !== null ? (
+                    <>
+                      Cap becomes ≈{' '}
+                      <span className="font-mono">
+                        {exampleMediumCap.toFixed(3)}
+                      </span>{' '}
+                      gwei.
+                    </>
+                  ) : (
+                    'Cap becomes ≈1.5× current gas.'
+                  )}
                 </li>
-                <li>
-                  Presets: Auto uses current gas, Low 1.1×, Medium 1.5×, High 2.0×.
-                </li>
-                <li>
-                  For smoother tips pick Medium or High when gas is very low now.
-                </li>
-                {usingFallback && <li className="text-neutral-400">Using fallback for gas price.</li>}
+                <li>Tips revert if gas goes higher.</li>
               </ul>
+
+              {usingFallback && (
+                <p className="mt-2 text-xs text-neutral-400">
+                  Gas price uses a fallback source right now.
+                </p>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* MAIN CARD (без дублирующего заголовка) */}
+      {/* MAIN CARD */}
       <div className="space-y-4">
         {/* Input (Gwei) */}
-        <label className="block text-center text-sm font-medium">Max gas price (gwei)</label>
+        <label className="block text-center text-sm font-medium">
+          Max gas price (gwei)
+        </label>
         <input
           value={inputGwei}
           inputMode="decimal"
@@ -245,7 +289,9 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
         {/* Presets */}
         <div className="flex flex-wrap justify-center gap-2">
           <button
-            onClick={() => setInputGwei(current ? current.toFixed(3) : '0')}
+            onClick={() =>
+              setInputGwei(current ? current.toFixed(3) : '0')
+            }
             className="rounded-md bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15"
           >
             Auto (recommended)
@@ -270,21 +316,11 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
           </button>
         </div>
 
-        {/* Hint */}
-        <p className="text-center text-sm text-neutral-400">
-          Current base fee{' '}
-          <span className="tabular-nums">{Number(current).toFixed(3)}</span>{' '}
-          gwei{usingFallback && <span className="ml-1 text-neutral-300">(using fallback)</span>}. Your
-          cap{' '}
-          <span className="tabular-nums">
-            {Number(inputGwei || 0).toFixed(3)} gwei
-          </span>{' '}
-          (
-          <span className="tabular-nums">
-            {capWeiBigInt ? `${formatEther(capWeiBigInt)} ETH` : '0'}
-          </span>
-          ). Transactions will only proceed if the network gas price is ≤ your cap.
-        </p>
+        {/* 2-в-1: цифры + профиль */}
+        <GasProfileMeter
+          currentGwei={current && current > 0 ? current : null}
+          capGwei={inputGwei && Number(inputGwei) > 0 ? Number(inputGwei) : null}
+        />
 
         {/* Create */}
         <div className="flex justify-center">
@@ -294,7 +330,11 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
             aria-busy={busy}
             className="rounded-xl bg-[#0052FF] px-5 py-2.5 font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-50 hover:opacity-90 active:opacity-80"
           >
-            {busy ? 'Creating…' : isConnected ? 'Create Jar' : 'Connect a wallet first'}
+            {busy
+              ? 'Creating…'
+              : isConnected
+              ? 'Create Jar'
+              : 'Connect a wallet first'}
           </button>
         </div>
 
@@ -308,7 +348,9 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
         {/* Result */}
         {jarAddress && (
           <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-            <div className="mb-2 text-center font-semibold">Jar created! 💙</div>
+            <div className="mb-2 text-center font-semibold">
+              Jar created! 💙
+            </div>
             <div className="text-sm">
               <div className="mb-1 text-center">
                 <span className="text-neutral-400">Address: </span>

@@ -1,42 +1,60 @@
-'use client';
+// src/actions/createJar.client.ts
+"use client";
 
-import { writeContract, waitForTransactionReceipt } from '@wagmi/core';
-import { decodeEventLog, type Hex } from 'viem';
-import { base } from 'viem/chains';
-import { getAccount, switchChain, getPublicClient } from 'wagmi/actions';
-import { config } from '@/lib/wagmi';
+import { writeContract, waitForTransactionReceipt } from "@wagmi/core";
+import { decodeEventLog, type Hex } from "viem";
+import { base } from "viem/chains";
+import { getAccount, switchChain, getPublicClient } from "wagmi/actions";
+import { config } from "@/lib/wagmi";
+import { TIPJAR_ABI } from "@/lib/abiTipJar";
 
 // Factory ABI from .env (single-line JSON)
 const FACTORY_ABI: any = (() => {
   try {
-    return JSON.parse(process.env.NEXT_PUBLIC_FACTORY_ABI ?? '[]');
+    return JSON.parse(process.env.NEXT_PUBLIC_FACTORY_ABI ?? "[]");
   } catch {
     return [];
   }
 })();
 
-const FACTORY_ADDRESS = process.env.NEXT_PUBLIC_FACTORY_BASE_MAINNET as `0x${string}`;
+const FACTORY_ADDRESS = process.env
+  .NEXT_PUBLIC_FACTORY_BASE_MAINNET as `0x${string}`;
 
-/** map raw errors → concise UX texts (EN) */
-function mapError(e: unknown): string {
-  const raw = String((e as any)?.shortMessage || (e as any)?.message || e || '');
+/** map raw errors → concise UX texts (EN) + сырой текст для дебага */
+function mapError(e: any): string {
+  const raw =
+    e?.shortMessage ||
+    e?.cause?.shortMessage ||
+    (Array.isArray(e?.metaMessages)
+      ? e.metaMessages.join("\n")
+      : "") ||
+    e?.message ||
+    String(e || "");
+
+  console.error("withdraw/createJar raw error:", raw, e);
+
   const msg = raw.toLowerCase();
 
-  if (msg.includes('user rejected')) return 'Signature was rejected in the wallet.';
-  if (msg.includes('only owner') || msg.includes('not owner')) return 'Only the owner can withdraw.';
-  if (msg.includes('insufficient funds')) return 'Insufficient balance (or gas) to perform the action.';
-  if (msg.includes('wrong chain') || msg.includes('chain mismatch') || msg.includes('chain id'))
-    return 'Please switch your wallet to Base Mainnet (8453) and try again.';
-  if (msg.includes('no backend is currently healthy') || msg.includes('timeout'))
-    return 'Network provider is unstable. Please try again shortly.';
+  if (msg.includes("user rejected")) return "Signature was rejected in the wallet.";
+  if (msg.includes("only owner") || msg.includes("not owner") || msg.includes("unauthorized"))
+    return "Only the owner of this jar can withdraw.";
+  if (msg.includes("no tips") || msg.includes("nothing to withdraw"))
+    return "There are no tips to withdraw from this jar yet.";
+  if (msg.includes("insufficient funds") || msg.includes("insufficient balance"))
+    return "Insufficient balance (or gas) to perform the action.";
+  if (msg.includes("wrong chain") || msg.includes("chain mismatch") || msg.includes("chain id"))
+    return "Please switch your wallet to Base Mainnet (8453) and try again.";
+  if (msg.includes("no backend is currently healthy") || msg.includes("timeout"))
+    return "Network provider is unstable. Please try again shortly.";
 
-  return 'The operation failed. Please try again.';
+  // на крайний случай отдаём сырой текст, чтобы видеть реальную причину
+  return raw || "The operation failed. Please try again.";
 }
 
 async function ensureBaseOrFail(): Promise<{ address: `0x${string}` }> {
   const acc0 = getAccount(config);
-  if (acc0.status !== 'connected' || !acc0.address) {
-    throw new Error('Connect your wallet first.');
+  if (acc0.status !== "connected" || !acc0.address) {
+    throw new Error("Connect your wallet first.");
   }
   if (acc0.chainId !== base.id) {
     await switchChain(config, { chainId: base.id });
@@ -47,7 +65,9 @@ async function ensureBaseOrFail(): Promise<{ address: `0x${string}` }> {
         return { address: acc.address as `0x${string}` };
       }
     }
-    throw new Error('Please switch your wallet to Base Mainnet (8453) and try again.');
+    throw new Error(
+      "Please switch your wallet to Base Mainnet (8453) and try again."
+    );
   }
   return { address: acc0.address as `0x${string}` };
 }
@@ -56,7 +76,7 @@ async function ensureBaseOrFail(): Promise<{ address: `0x${string}` }> {
 export async function createJar(params: { maxGasPriceWei: bigint }) {
   try {
     if (!FACTORY_ADDRESS || !FACTORY_ABI?.length) {
-      return { success: false, error: 'Factory config is missing' } as const;
+      return { success: false, error: "Factory config is missing" } as const;
     }
 
     const { address: account } = await ensureBaseOrFail();
@@ -65,7 +85,7 @@ export async function createJar(params: { maxGasPriceWei: bigint }) {
     const sim = await publicClient.simulateContract({
       abi: FACTORY_ABI,
       address: FACTORY_ADDRESS,
-      functionName: 'createJar',
+      functionName: "createJar",
       args: [params.maxGasPriceWei],
       chain: base,
       account,
@@ -79,13 +99,19 @@ export async function createJar(params: { maxGasPriceWei: bigint }) {
     for (const log of receipt.logs) {
       try {
         const topics =
-          (log.topics && log.topics.length > 0
-            ? ([log.topics[0] as `0x${string}`, ...(log.topics.slice(1) as `0x${string}`[])] as
-                [] | [`0x${string}`, ...`0x${string}`[]])
-            : ([] as []));
-        const data = ((log as any).data ?? '0x') as `0x${string}`;
-        const parsed = decodeEventLog({ abi: FACTORY_ABI, data, topics }) as { eventName: string; args: any };
-        if (parsed.eventName === 'JarCreated') {
+          log.topics && log.topics.length > 0
+            ? ([
+                log.topics[0] as `0x${string}`,
+                ...(log.topics.slice(1) as `0x${string}`[]),
+              ] as [] | [`0x${string}`, ...`0x${string}`[]])
+            : ([] as []);
+        const data = ((log as any).data ?? "0x") as `0x${string}`;
+        const parsed = decodeEventLog({
+          abi: FACTORY_ABI,
+          data,
+          topics,
+        }) as { eventName: string; args: any };
+        if (parsed.eventName === "JarCreated") {
           const args = parsed.args || {};
           if (args.jar) {
             jar = args.jar as `0x${string}`;
@@ -93,39 +119,41 @@ export async function createJar(params: { maxGasPriceWei: bigint }) {
           }
         }
       } catch {
-        // skip non-factory events
+        // ignore malformed logs
       }
     }
 
-    return { success: true, txHash: receipt.transactionHash, jarAddress: jar } as const;
+    return {
+      success: true,
+      txHash: receipt.transactionHash,
+      jarAddress: jar,
+    } as const;
   } catch (e: any) {
     return { success: false, error: mapError(e) } as const;
   }
 }
 
-/** Withdraw (simulate first) */
+/** Withdraw tips from a specific jar (simulate + send on Base) */
 export async function withdrawFromJar(jarAddress: `0x${string}`) {
   try {
-    const TIPJAR_ABI = [
-      { type: 'function', name: 'withdraw', inputs: [], outputs: [], stateMutability: 'nonpayable' },
-    ] as const;
-
     const { address: account } = await ensureBaseOrFail();
-
     const publicClient = getPublicClient(config);
+
     const sim = await publicClient.simulateContract({
-      abi: TIPJAR_ABI as any,
       address: jarAddress,
-      functionName: 'withdraw',
-      args: [] as const,
+      abi: TIPJAR_ABI,
+      functionName: "withdraw",
+      args: [],
       chain: base,
       account,
     });
 
     const txHash = await writeContract(config, sim.request);
     await waitForTransactionReceipt(config, { hash: txHash });
+
     return { success: true, txHash } as const;
   } catch (e: any) {
+    console.error("withdrawFromJar error", e);
     return { success: false, error: mapError(e) } as const;
   }
 }
