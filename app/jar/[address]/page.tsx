@@ -791,72 +791,77 @@ export default function JarPublicPage() {
     }
   }
 
+  /** ===== Main bootstrap effect: tips + owner + gas + intervals ===== */
   useEffect(() => {
-    let alive = true;
+    if (!publicClient) return;
 
-    (async () => {
-      // сразу пробуем вытащить кэш tips и показать мгновенно
+    let alive = true;
+    let idOwner: ReturnType<typeof setInterval> | null = null;
+    let idGas: ReturnType<typeof setInterval> | null = null;
+    let idFeed: ReturnType<typeof setInterval> | null = null;
+
+    const run = async () => {
       try {
-        const cached = getTipCacheForJar(jar);
-        if (cached) {
-          const des = deserializeTips(cached.tips);
-          setTips(
-            des.sort((a, b) => Number(b.blockNumber - a.blockNumber)),
-          );
-          // поверх кэша просто дотягиваем новые
-          void loadTipsIncremental(true);
-        } else {
-          // нет кэша → быстрый слой, потом глубокий в фоне
+        // сразу пробуем вытащить кэш tips и показать мгновенно
+        try {
+          const cached = getTipCacheForJar(jar);
+          if (cached) {
+            const des = deserializeTips(cached.tips);
+            setTips(
+              des.sort((a, b) => Number(b.blockNumber - a.blockNumber)),
+            );
+            // поверх кэша просто дотягиваем новые
+            void loadTipsIncremental(true);
+          } else {
+            // нет кэша → быстрый слой, потом глубокий в фоне
+            await loadTipsShallow(false);
+            void loadTipsDeep(true);
+          }
+        } catch {
           await loadTipsShallow(false);
           void loadTipsDeep(true);
         }
+
+        void refreshOwnerPanel(true);
+        void refreshGasPanel(true);
       } catch {
-        await loadTipsShallow(false);
-        void loadTipsDeep(true);
+        // nothing
       }
 
-      void refreshOwnerPanel(true);
-      void refreshGasPanel(true);
-
-      const idOwner = setInterval(() => {
+      // периодические обновления
+      idOwner = setInterval(() => {
         if (!alive || !isPageVisible()) return;
         void refreshOwnerPanel(true);
       }, 20_000);
 
-      const idGas = setInterval(() => {
+      idGas = setInterval(() => {
         if (!alive || !isPageVisible()) return;
         void refreshGasPanel(true);
       }, 30_000);
 
-      const idFeed = setInterval(() => {
+      idFeed = setInterval(() => {
         if (!alive || !isPageVisible()) return;
         void loadTipsIncremental(true);
       }, 45_000);
+    };
 
-      const onVisibility = () => {
-        if (isPageVisible()) {
-          void refreshOwnerPanel(true);
-          void refreshGasPanel(true);
-          void loadTipsIncremental(true);
-        }
-      };
-      document.addEventListener('visibilitychange', onVisibility);
+    void run();
 
-      const cleanup = () => {
-        alive = false;
-        clearInterval(idOwner);
-        clearInterval(idGas);
-        clearInterval(idFeed);
-        document.removeEventListener('visibilitychange', onVisibility);
-      };
-
-      // @ts-expect-error – используем в return ниже
-      (JarPublicPage as any)._cleanup = cleanup;
-    })();
+    const onVisibility = () => {
+      if (isPageVisible()) {
+        void refreshOwnerPanel(true);
+        void refreshGasPanel(true);
+        void loadTipsIncremental(true);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
-      const fn = (JarPublicPage as any)._cleanup;
-      if (typeof fn === 'function') fn();
+      alive = false;
+      if (idOwner) clearInterval(idOwner);
+      if (idGas) clearInterval(idGas);
+      if (idFeed) clearInterval(idFeed);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [publicClient, jar]);
