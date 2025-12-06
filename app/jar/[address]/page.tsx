@@ -210,6 +210,7 @@ export default function JarPublicPage() {
   // ===== tips feed =====
   const [tips, setTips] = useState<TipItem[]>([]);
   const [loadingFeed, setLoadingFeed] = useState(false);
+  const [justRefreshed, setJustRefreshed] = useState(false);
 
   // адрес -> имя (.eth/.base) кеш
   const [nameMap, setNameMap] = useState<Record<string, string | null>>({});
@@ -910,6 +911,15 @@ export default function JarPublicPage() {
     return `${origin}/jar/${jar}`;
   }, [jar]);
 
+  /** ===== Refresh button handler (UX фидбек) ===== */
+  const handleRefreshClick = async () => {
+    if (loadingFeed) return;
+    setJustRefreshed(false);
+    await loadTipsIncremental(false);
+    setJustRefreshed(true);
+    setTimeout(() => setJustRefreshed(false), 900);
+  };
+
   if (!mounted) return null;
 
   return (
@@ -1149,11 +1159,15 @@ export default function JarPublicPage() {
             <h3 className="text-lg font-semibold">Recent tips</h3>
             <button
               type="button"
-              onClick={() => loadTipsIncremental()}
+              onClick={handleRefreshClick}
               disabled={loadingFeed}
-              className="rounded-md bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15 disabled:opacity-60"
+              className="rounded-md bg-white/10 px-3 py-1.5 text-sm transition-colors hover:bg-white/15 disabled:opacity-60"
             >
-              {loadingFeed ? 'Loading…' : 'Refresh'}
+              {loadingFeed
+                ? 'Loading…'
+                : justRefreshed
+                ? 'Refreshed'
+                : 'Refresh'}
             </button>
           </div>
 
