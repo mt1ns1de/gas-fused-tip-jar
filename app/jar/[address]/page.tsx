@@ -43,7 +43,11 @@ function useMounted() {
   return m;
 }
 
-async function withRetry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 500): Promise<T> {
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  attempts = 3,
+  delayMs = 500,
+): Promise<T> {
   let lastErr: any;
   for (let i = 0; i < attempts; i++) {
     try {
@@ -101,11 +105,76 @@ function getCachedOwner(jar: string): string | null {
   }
 }
 
+/** ===== Tip cache in localStorage (per jar) ===== */
+
+const TIP_CACHE_KEY = 'jar_tip_cache_v1';
+
+type TipItemSerialized = {
+  txHash: string;
+  from: string;
+  amountWei: string;
+  message: string;
+  blockNumber: string;
+};
+
+type TipCacheRecord = {
+  lastBlock: string; // последний блок, до которого мы уже ходили
+  tips: TipItemSerialized[];
+};
+
+type TipCacheAll = Record<string, TipCacheRecord>;
+
+function serializeTips(tips: TipItem[]): TipItemSerialized[] {
+  return tips.map((t) => ({
+    txHash: t.txHash,
+    from: t.from,
+    amountWei: t.amountWei.toString(),
+    message: t.message,
+    blockNumber: t.blockNumber.toString(),
+  }));
+}
+
+function deserializeTips(arr: TipItemSerialized[]): TipItem[] {
+  return arr.map((t) => ({
+    txHash: t.txHash as Hex,
+    from: t.from as `0x${string}`,
+    amountWei: BigInt(t.amountWei),
+    message: t.message,
+    blockNumber: BigInt(t.blockNumber),
+  }));
+}
+
+function getTipCacheAll(): TipCacheAll {
+  try {
+    const raw = localStorage.getItem(TIP_CACHE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) as TipCacheAll;
+  } catch {
+    return {};
+  }
+}
+
+function getTipCacheForJar(jar: string): TipCacheRecord | null {
+  try {
+    const all = getTipCacheAll();
+    return all[jar.toLowerCase()] || null;
+  } catch {
+    return null;
+  }
+}
+
+function setTipCacheForJar(jar: string, rec: TipCacheRecord) {
+  try {
+    const all = getTipCacheAll();
+    all[jar.toLowerCase()] = rec;
+    localStorage.setItem(TIP_CACHE_KEY, JSON.stringify(all));
+  } catch {}
+}
+
 /** ===== Log filter + rate-limit helpers ===== */
 
-// ВАЖНО: здесь добавили indexed, как в реальном событии контракта
 const TIPPED_EVENT = parseAbiItem(
-  'event Tipped(address indexed from, uint256 amount, string message)'
+  'event Tipped(address indexed from, uint256 amount, string message)',
 );
 
 const sleep = (ms: number) =>
@@ -281,7 +350,7 @@ export default function JarPublicPage() {
         setLastTx(res.txHash || null);
         setShowSuccess(true);
         // parallel refresh
-        void loadTips(true);
+        void loadTipsIncremental(true);
         void refreshOwnerPanel(true);
         void refreshGasPanel(true);
       } else {
@@ -340,8 +409,20 @@ export default function JarPublicPage() {
 
   const fuseDescription = fuseBadge?.description;
 
-  /** ===== Tips loader (event filter + backoff + visibility) ===== */
-  async function loadTips(silent = false) {
+  /** ===== Dedup helper ===== */
+  function dedupAndSortTips(arr: TipItem[]): TipItem[] {
+    const map = new Map<string, TipItem>();
+    for (const t of arr) {
+      const k = `${t.txHash}-${t.from}-${t.amountWei.toString()}-${t.blockNumber.toString()}`;
+      map.set(k, t);
+    }
+    const unique = Array.from(map.values());
+    unique.sort((a, b) => Number(b.blockNumber - a.blockNumber));
+    return unique;
+  }
+
+  /** ===== Tips loader: shallow (быстрый) ===== */
+  async function loadTipsShallow(silent = false) {
     if (!publicClient) return;
     if (!isPageVisible()) return;
     if (tipsLoadingLock) return;
@@ -351,14 +432,14 @@ export default function JarPublicPage() {
     try {
       const latest = await withRetry(() => publicClient.getBlockNumber());
       let to = latest;
-      let window = 4_000n;
+      let window = 4_000n; // небольшое окно
       let chunks = 0;
-      const maxChunks = 3;
+      const maxChunks = 4; // всего ~16k блоков
       const acc: TipItem[] = [];
 
       let backoffMs = 600;
 
-      while (to >= 0n && acc.length < 20 && chunks < maxChunks) {
+      while (to >= 0n && chunks < maxChunks) {
         const from = to > window ? to - window : 0n;
 
         try {
@@ -385,7 +466,6 @@ export default function JarPublicPage() {
               const fromAddr = args.from as `0x${string}` | undefined;
               const amountBI = args.amount as bigint | undefined;
 
-              // если не смогли декодировать — пропускаем, а не подставляем нули
               if (!fromAddr || amountBI === undefined) continue;
 
               const msg = sanitizeMessage(args.message ?? '');
@@ -398,7 +478,7 @@ export default function JarPublicPage() {
                 blockNumber: ev.blockNumber ?? 0n,
               });
             } catch {
-              // skip rare decoding anomalies
+              // skip
             }
           }
 
@@ -433,10 +513,212 @@ export default function JarPublicPage() {
         chunks++;
       }
 
-      acc.sort((a, b) => Number(b.blockNumber - a.blockNumber));
-      setTips(acc.slice(0, 20));
+      const merged = dedupAndSortTips(acc);
+      setTips(merged);
+      // Шаллоу не кладём в кэш, кэш будет от deep
     } catch (e) {
-      if (!silent) console.error('Failed to load tips:', e);
+      if (!silent) console.error('Failed to load shallow tips:', e);
+    } finally {
+      if (!silent) setLoadingFeed(false);
+      tipsLoadingLock = false;
+    }
+  }
+
+  /** ===== Tips loader: incremental (от lastBlock в кэше) ===== */
+  async function loadTipsIncremental(silent = false) {
+    if (!publicClient) return;
+    if (!isPageVisible()) return;
+    if (tipsLoadingLock) return;
+    const cached = getTipCacheForJar(jar);
+    if (!cached) {
+      // если нет кэша — просто быстрый свежий слой
+      return loadTipsShallow(silent);
+    }
+
+    tipsLoadingLock = true;
+    if (!silent) setLoadingFeed(true);
+
+    try {
+      const latest = await withRetry(() => publicClient.getBlockNumber());
+      const fromBlockNew = BigInt(cached.lastBlock || '0') + 1n;
+
+      let acc = deserializeTips(cached.tips);
+
+      if (fromBlockNew <= latest) {
+        try {
+          const logs = await publicClient.getLogs({
+            address: jar,
+            fromBlock: fromBlockNew,
+            toBlock: latest,
+            event: TIPPED_EVENT,
+          });
+
+          const fresh: TipItem[] = [];
+          for (const lg of logs) {
+            try {
+              const ev = lg as unknown as {
+                args?: {
+                  from?: `0x${string}`;
+                  amount?: bigint;
+                  message?: string;
+                };
+                transactionHash?: Hex;
+                blockNumber?: bigint;
+              };
+
+              const args = ev.args || {};
+              const fromAddr = args.from as `0x${string}` | undefined;
+              const amountBI = args.amount as bigint | undefined;
+
+              if (!fromAddr || amountBI === undefined) continue;
+
+              const msg = sanitizeMessage(args.message ?? '');
+
+              fresh.push({
+                txHash: ev.transactionHash || ('0x' as Hex),
+                from: fromAddr,
+                amountWei: amountBI,
+                message: msg,
+                blockNumber: ev.blockNumber ?? 0n,
+              });
+            } catch {
+              // skip
+            }
+          }
+
+          acc = acc.concat(fresh);
+        } catch (err) {
+          if (!silent) console.error('Failed to load new tips:', err);
+        }
+      }
+
+      const merged = dedupAndSortTips(acc);
+      setTips(merged);
+
+      setTipCacheForJar(jar, {
+        lastBlock: latest.toString(),
+        tips: serializeTips(merged),
+      });
+    } catch (e) {
+      if (!silent) console.error('Failed to load incremental tips:', e);
+    } finally {
+      if (!silent) setLoadingFeed(false);
+      tipsLoadingLock = false;
+    }
+  }
+
+  /** ===== Tips loader: deep scan (all-time, в фоне) ===== */
+  async function loadTipsDeep(silent = false) {
+    if (!publicClient) return;
+    if (!isPageVisible()) return;
+    if (tipsLoadingLock) return;
+
+    // если уже есть кэш — глубокий скан не нужен
+    const existing = getTipCacheForJar(jar);
+    if (existing) {
+      // но можем догрузить последние блоки
+      return loadTipsIncremental(silent);
+    }
+
+    tipsLoadingLock = true;
+    if (!silent) setLoadingFeed(true);
+
+    try {
+      const latest = await withRetry(() => publicClient.getBlockNumber());
+      let to = latest;
+      let window = 10_000n; // окно побольше
+      let chunks = 0;
+      const maxChunks = 200; // до ~2M блоков
+      const deepAcc: TipItem[] = [];
+
+      let backoffMs = 600;
+
+      while (to >= 0n && chunks < maxChunks) {
+        const from = to > window ? to - window : 0n;
+
+        try {
+          const logs = await publicClient.getLogs({
+            address: jar,
+            fromBlock: from,
+            toBlock: to,
+            event: TIPPED_EVENT,
+          });
+
+          for (const lg of logs) {
+            try {
+              const ev = lg as unknown as {
+                args?: {
+                  from?: `0x${string}`;
+                  amount?: bigint;
+                  message?: string;
+                };
+                transactionHash?: Hex;
+                blockNumber?: bigint;
+              };
+
+              const args = ev.args || {};
+              const fromAddr = args.from as `0x${string}` | undefined;
+              const amountBI = args.amount as bigint | undefined;
+
+              if (!fromAddr || amountBI === undefined) continue;
+
+              const msg = sanitizeMessage(args.message ?? '');
+
+              deepAcc.push({
+                txHash: ev.transactionHash || ('0x' as Hex),
+                from: fromAddr,
+                amountWei: amountBI,
+                message: msg,
+                blockNumber: ev.blockNumber ?? 0n,
+              });
+            } catch {
+              // skip
+            }
+          }
+
+          backoffMs = 600;
+        } catch (err: any) {
+          const msg = String(err?.message || '');
+          const code = Number(err?.code);
+
+          if (
+            msg.includes('over rate limit') ||
+            code === -32016 ||
+            code === 429
+          ) {
+            window = window / 2n || 1n;
+            await sleep(backoffMs);
+            backoffMs = Math.min(backoffMs * 2, 5000);
+            continue;
+          }
+
+          if (
+            msg.includes('no backend is currently healthy') ||
+            code === -32011 ||
+            /timeout/i.test(msg)
+          ) {
+            window = window / 2n || 1n;
+            await sleep(backoffMs);
+            backoffMs = Math.min(backoffMs * 2, 5000);
+            continue;
+          }
+
+          throw err;
+        }
+
+        to = from > 0n ? from - 1n : 0n;
+        chunks++;
+      }
+
+      const merged = dedupAndSortTips(deepAcc);
+      setTips(merged);
+
+      setTipCacheForJar(jar, {
+        lastBlock: latest.toString(),
+        tips: serializeTips(merged),
+      });
+    } catch (e) {
+      if (!silent) console.error('Failed to load deep tips:', e);
     } finally {
       if (!silent) setLoadingFeed(false);
       tipsLoadingLock = false;
@@ -512,40 +794,69 @@ export default function JarPublicPage() {
   useEffect(() => {
     let alive = true;
 
-    void refreshOwnerPanel(true);
-    void refreshGasPanel(true);
-    void loadTips();
-
-    const idOwner = setInterval(() => {
-      if (!alive || !isPageVisible()) return;
-      void refreshOwnerPanel(true);
-    }, 20_000);
-
-    const idGas = setInterval(() => {
-      if (!alive || !isPageVisible()) return;
-      void refreshGasPanel(true);
-    }, 30_000);
-
-    const idFeed = setInterval(() => {
-      if (!alive || !isPageVisible()) return;
-      void loadTips(true);
-    }, 45_000);
-
-    const onVisibility = () => {
-      if (isPageVisible()) {
-        void refreshOwnerPanel(true);
-        void refreshGasPanel(true);
-        void loadTips(true);
+    (async () => {
+      // сразу пробуем вытащить кэш tips и показать мгновенно
+      try {
+        const cached = getTipCacheForJar(jar);
+        if (cached) {
+          const des = deserializeTips(cached.tips);
+          setTips(
+            des.sort((a, b) => Number(b.blockNumber - a.blockNumber)),
+          );
+          // поверх кэша просто дотягиваем новые
+          void loadTipsIncremental(true);
+        } else {
+          // нет кэша → быстрый слой, потом глубокий в фоне
+          await loadTipsShallow(false);
+          void loadTipsDeep(true);
+        }
+      } catch {
+        await loadTipsShallow(false);
+        void loadTipsDeep(true);
       }
-    };
-    document.addEventListener('visibilitychange', onVisibility);
+
+      void refreshOwnerPanel(true);
+      void refreshGasPanel(true);
+
+      const idOwner = setInterval(() => {
+        if (!alive || !isPageVisible()) return;
+        void refreshOwnerPanel(true);
+      }, 20_000);
+
+      const idGas = setInterval(() => {
+        if (!alive || !isPageVisible()) return;
+        void refreshGasPanel(true);
+      }, 30_000);
+
+      const idFeed = setInterval(() => {
+        if (!alive || !isPageVisible()) return;
+        void loadTipsIncremental(true);
+      }, 45_000);
+
+      const onVisibility = () => {
+        if (isPageVisible()) {
+          void refreshOwnerPanel(true);
+          void refreshGasPanel(true);
+          void loadTipsIncremental(true);
+        }
+      };
+      document.addEventListener('visibilitychange', onVisibility);
+
+      const cleanup = () => {
+        alive = false;
+        clearInterval(idOwner);
+        clearInterval(idGas);
+        clearInterval(idFeed);
+        document.removeEventListener('visibilitychange', onVisibility);
+      };
+
+      // @ts-expect-error – используем в return ниже
+      (JarPublicPage as any)._cleanup = cleanup;
+    })();
 
     return () => {
-      alive = false;
-      clearInterval(idOwner);
-      clearInterval(idGas);
-      clearInterval(idFeed);
-      document.removeEventListener('visibilitychange', onVisibility);
+      const fn = (JarPublicPage as any)._cleanup;
+      if (typeof fn === 'function') fn();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [publicClient, jar]);
@@ -833,7 +1144,7 @@ export default function JarPublicPage() {
             <h3 className="text-lg font-semibold">Recent tips</h3>
             <button
               type="button"
-              onClick={() => loadTips()}
+              onClick={() => loadTipsIncremental()}
               disabled={loadingFeed}
               className="rounded-md bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15 disabled:opacity-60"
             >
