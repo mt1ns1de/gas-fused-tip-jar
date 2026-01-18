@@ -57,13 +57,13 @@ Using `call` instead of `transfer` to handle smart-contract wallets (Gnosis Safe
 
 | Contract | Address |
 | --- | --- |
-| **Factory (Base)** | [`0x16db7bf0afabf9ac9571ef4dec84f142a579d2a6`](https://www.google.com/search?q=https://basescan.org/address/0x16db7bf0afabf9ac9571ef4dec84f142a579d2a6) |
+| **Factory (Base)** | [`0x16db7bf0afabf9ac9571ef4dec84f142a579d2a6`](https://www.google.com/search?q=%5Bhttps://basescan.org/address/0x16db7bf0afabf9ac9571ef4dec84f142a579d2a6%5D(https://basescan.org/address/0x16db7bf0afabf9ac9571ef4dec84f142a579d2a6)) |
 
 ## Run Locally
 
 ```bash
 # 1. Install
-git clone [https://github.com/mt1ns1de/gas-fused-tip-jar.git](https://github.com/mt1ns1de/gas-fused-tip-jar.git)
+git clone https://github.com/mt1ns1de/gas-fused-tip-jar.git
 cd gas-fused-tip-jar
 npm install
 
