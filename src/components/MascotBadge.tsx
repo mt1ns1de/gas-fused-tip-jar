@@ -1,59 +1,42 @@
-import Image from 'next/image';
-import { motion } from 'framer-motion';
+'use client';
 
+import Image from 'next/image';
+import React from 'react';
+
+/**
+ * MascotBadge
+ *
+ * Renders the original gf-mascot.png from /public
+ * with a subtle floating animation.
+ */
 export default function MascotBadge() {
   return (
-    <div className="group relative inline-flex items-center">
-      {/* Живой Орби */}
-      <motion.div
-        className="
-          flex h-16 w-16 items-center justify-center
-          rounded-3xl bg-[#0B1221]
-          overflow-hidden
-        "
-        // мягкое «дыхание» и плавание
-        animate={{ y: [0, -1.5, 0, 1.5, 0], scale: [1, 1.02, 1, 1.02, 1] }}
-        transition={{
-          duration: 6,
-          repeat: Infinity,
-          ease: 'easeInOut',
+    <div className="pointer-events-none select-none">
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            @keyframes gfMascotFloat {
+              0%   { transform: translateY(0px); }
+              50%  { transform: translateY(-4px); }
+              100% { transform: translateY(0px); }
+            }
+          `,
         }}
-        whileHover={{
-          scale: 1.08,
-          y: 0,
-          transition: { duration: 0.18, ease: 'easeOut' },
+      />
+      <div
+        className="relative"
+        style={{
+          animation: 'gfMascotFloat 4s ease-in-out infinite',
         }}
       >
         <Image
           src="/gf-mascot.png"
-          alt="Orbby"
-          width={56}
-          height={56}
-          className="select-none"
+          alt="Gas-Fused mascot"
+          width={64}
+          height={64}
+          priority
+          className="drop-shadow-[0_0_16px_rgba(0,0,0,0.5)]"
         />
-      </motion.div>
-
-      {/* Тултип справа в стиле Base-карточек */}
-      <div
-        className="
-          pointer-events-none
-          absolute left-20 top-1/2 -translate-y-1/2
-
-          px-3 py-2
-          rounded-lg
-          bg-white/5
-          border border-white/10
-          backdrop-blur-md
-
-          text-[12px] text-neutral-200
-          w-max max-w-xs
-
-          opacity-0 translate-x-1
-          transition-all duration-200
-          group-hover:opacity-100 group-hover:translate-x-0
-        "
-      >
-        Orbby keeps an eye on your fuse.
       </div>
     </div>
   );

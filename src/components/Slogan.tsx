@@ -19,22 +19,21 @@ export default function Slogan() {
 
   useEffect(() => {
     setMounted(true);
-    // Выбираем слоган только на клиенте, чтобы не было рассинхрона SSR/CSR
+    // choose slogan only on client to avoid SSR/CSR mismatch
     const i = Math.floor(Math.random() * SLOGANS.length);
     setText(SLOGANS[i]);
   }, []);
 
-  // Во время SSR и до маунта выводим пустой плейсхолдер фиксированной высоты,
-  // чтобы не было различий в разметке при гидрации.
+  // during SSR and before mount we render a fixed-height placeholder
+  // to avoid layout differences during hydration.
   if (!mounted) {
     return <div className="h-6" />;
   }
 
   return (
     <div className="flex justify-center">
-      {/* лёгкое «дыхание» без навязчивости */}
+      {/* subtle breathing animation */}
       <style
-        // инлайн-стили безопасны, а ключевые кадры уникальны по имени
         dangerouslySetInnerHTML={{
           __html: `
           @keyframes subtlePulse {
