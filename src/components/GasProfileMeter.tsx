@@ -1,86 +1,123 @@
 'use client';
 
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
 
 type Props = {
   currentGwei: number | null;
   capGwei: number | null;
 };
 
-type ProfileKey = 'unknown' | 'conservative' | 'balanced' | 'aggressive';
-
 export default function GasProfileMeter({ currentGwei, capGwei }: Props) {
-  const ratio = useMemo(() => {
-    if (!currentGwei || !capGwei) return null;
-    if (currentGwei <= 0 || capGwei <= 0) return null;
-    return capGwei / currentGwei;
-  }, [currentGwei, capGwei]);
+  const hasData =
+    currentGwei !== null &&
+    capGwei !== null &&
+    currentGwei > 0 &&
+    capGwei > 0;
 
-  const profile: ProfileKey = useMemo(() => {
-    if (ratio == null) return 'unknown';
-    if (ratio < 1.1) return 'conservative';
-    if (ratio <= 1.8) return 'balanced';
-    return 'aggressive';
-  }, [ratio]);
-
-  const ratioLabel = ratio ? `${ratio.toFixed(2)}×` : null;
-
-  const baseLine = (() => {
-    if (!currentGwei || !capGwei || currentGwei <= 0 || capGwei <= 0) {
-      return 'Set a cap to see how it compares to the current gas price.';
-    }
-    return `Base fee ${currentGwei.toFixed(3)} gwei · cap ${capGwei.toFixed(
-      3,
-    )} gwei`;
-  })();
-
-  const profileLine = (() => {
-    if (!currentGwei || !capGwei || currentGwei <= 0 || capGwei <= 0) {
-      return 'Tips only proceed if the network gas price is ≤ your cap.';
+  const { ratio, badge, barWidth } = useMemo(() => {
+    if (!hasData || !currentGwei || !capGwei) {
+      return { ratio: null as number | null, badge: null, barWidth: 0 };
     }
 
-    if (profile === 'unknown') {
-      return 'Tips only proceed if the network gas price is ≤ your cap.';
+    // та же логика, что и на /jar/[address]: ratio = cap / current
+    const r = capGwei / currentGwei;
+
+    // мэппинг ratio → ширина полоски (0..2 → 0..100%)
+    const normalized = Math.max(0, Math.min(r / 2, 1));
+    const width = normalized * 100;
+
+    let badge:
+      | {
+          label: string;
+          className: string;
+          description: string;
+        }
+      | null = null;
+
+    if (r < 1) {
+      badge = {
+        label: 'Cap below gas',
+        className: 'border-amber-400/60 bg-amber-500/10 text-amber-100',
+        description:
+          'Cap is currently below base fee. Some tips may revert until gas cools down.',
+      };
+    } else if (r <= 1.7) {
+      badge = {
+        label: 'Balanced fuse',
+        className:
+          'border-emerald-400/60 bg-emerald-500/10 text-emerald-100',
+        description:
+          'Cap is in a balanced zone. Supporters stay protected, most tips will go through.',
+      };
+    } else {
+      badge = {
+        label: 'Loose fuse',
+        className: 'border-sky-400/60 bg-sky-500/10 text-sky-100',
+        description:
+          'Cap is well above current gas. Tips are unlikely to revert, but fees may be higher if gas spikes later.',
+      };
     }
 
-    const p = capitalize(profile);
-    const r = ratioLabel ? ` (${ratioLabel})` : '';
-    return `Profile: ${p}${r}. Tips only proceed if gas ≤ your cap.`;
-  })();
-
-  const segments: { key: ProfileKey; label: string }[] = [
-    { key: 'conservative', label: 'Conservative' },
-    { key: 'balanced', label: 'Balanced' },
-    { key: 'aggressive', label: 'Aggressive' },
-  ];
+    return { ratio: r, badge, barWidth: width };
+  }, [hasData, currentGwei, capGwei]);
 
   return (
-    <div className="mt-3 space-y-1 text-xs">
-      <div className="flex overflow-hidden rounded-full border border-white/10 bg-white/5">
-        {segments.map((seg, idx) => {
-          const active = profile === seg.key;
-          const isMiddle = idx === 1;
-          return (
-            <div
-              key={seg.key}
-              className={[
-                'flex-1 px-3 py-1.5 text-center text-[12px] leading-tight',
-                isMiddle ? 'border-x border-white/10' : '',
-                active ? 'bg-white/10 text-white' : 'text-neutral-400',
-              ].join(' ')}
+    <div className="mt-4 w-full select-none">
+      <div className="relative w-full overflow-hidden rounded-2xl border border-white/10 bg-black/40 p-4 backdrop-blur-sm">
+        {/* шапка карточки — внутри бордера */}
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="text-xs font-medium text-neutral-300">
+            GAS PROFILE
+          </div>
+          {badge && (
+            <span
+              className={
+                'inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] ' +
+                badge.className
+              }
             >
-              {seg.label}
-            </div>
-          );
-        })}
-      </div>
+              {badge.label}
+            </span>
+          )}
+        </div>
 
-      <p className="text-center text-[12px] text-neutral-300">{baseLine}</p>
-      <p className="text-center text-[12px] text-neutral-400">{profileLine}</p>
+        {/* числа */}
+        <div className="mb-2 text-sm text-neutral-300">
+          <span className="font-semibold text-white">
+            Current:{' '}
+            {currentGwei !== null ? currentGwei.toFixed(3) : '—'} gwei
+          </span>
+          {' · '}
+          <span className="font-semibold text-white">
+            Cap: {capGwei !== null ? capGwei.toFixed(3) : '—'} gwei
+          </span>
+        </div>
+
+        {/* описание */}
+        <div className="mb-3 text-xs text-neutral-400">
+          {hasData && badge
+            ? badge.description
+            : 'Waiting for gas data…'}
+        </div>
+
+        {/* плавная полоска */}
+        <div className="relative h-2 w-full overflow-hidden rounded-full bg-neutral-800/60">
+          <div
+            className="absolute left-0 top-0 h-full bg-[#0052FF]"
+            style={{
+              width: `${barWidth}%`,
+              transition: 'width 0.6s cubic-bezier(0.25, 0.8, 0.25, 1)',
+              boxShadow: barWidth
+                ? '0 0 10px rgba(0, 82, 255, 0.7)'
+                : 'none',
+            }}
+          />
+        </div>
+
+        <div className="mt-1 text-right text-[10px] text-neutral-500">
+          ratio ≈ {ratio !== null ? ratio.toFixed(2) : '—'}
+        </div>
+      </div>
     </div>
   );
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }

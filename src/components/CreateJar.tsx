@@ -29,13 +29,13 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
   const publicClient = usePublicClient();
 
   // UI state
-  const [inputGwei, setInputGwei] = useState<string>(''); // заполним после первого фетча (Medium)
+  const [inputGwei, setInputGwei] = useState<string>(''); // will be filled after first fetch (Medium)
   const [netGasGwei, setNetGasGwei] = useState<string>('0');
   const [usingFallback, setUsingFallback] = useState<boolean>(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // left floating help
+  // left floating help panel
   const [showHow, setShowHow] = useState(false);
 
   // result
@@ -50,7 +50,7 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
     try {
       if (getChainId(config) === base.id) return true;
     } catch {
-      /* ignore */
+      // ignore getChainId error, will try switching
     }
     try {
       await switchChain(config, { chainId: base.id });
@@ -63,46 +63,61 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
   /** ===== gas price + medium preset ===== */
   useEffect(() => {
     let alive = true;
+
     const load = async () => {
       try {
         if (!publicClient) return;
         const { wei, fallbackUsed } = await getSafeGasPrice(publicClient);
         if (!alive) return;
+
         const gwei = Number(formatGwei(wei));
-        setNetGasGwei(gwei.toFixed(3));
+        const rounded = Number.isFinite(gwei) ? gwei : 0;
+
+        setNetGasGwei(rounded.toFixed(3));
         setUsingFallback(fallbackUsed);
-        // auto Medium (1.5×) только один раз
-        setInputGwei((prev) => (prev === '' ? (gwei * 1.5).toFixed(3) : prev));
+
+        // auto Medium (1.5×) only once
+        setInputGwei((prev) =>
+          prev === '' ? (rounded * 1.5).toFixed(3) : prev,
+        );
       } catch {
-        /* ignore */
+        // silently ignore — keep previous state
       }
     };
+
     void load();
     const id = setInterval(load, 20000);
+
     return () => {
       alive = false;
       clearInterval(id);
     };
   }, [publicClient]);
 
-  const current = useMemo(() => Number(netGasGwei || '0'), [netGasGwei]);
+  const current = useMemo(
+    () => Number(netGasGwei || '0'),
+    [netGasGwei],
+  );
 
   const capWeiBigInt = useMemo(() => {
     try {
-      return parseGwei(`${Number(inputGwei || '0')}`);
+      const numeric = Number(inputGwei || '0');
+      if (!Number.isFinite(numeric) || numeric <= 0) return 0n;
+      return parseGwei(String(numeric));
     } catch {
       return 0n;
     }
   }, [inputGwei]);
 
-  // примерные значения для блока Example
+  // sample values used for the Example panel
   const exampleGas =
     current && Number.isFinite(current) && current > 0 ? current : null;
   const exampleMediumCap = exampleGas !== null ? exampleGas * 1.5 : null;
 
-  // прокидываем снапшот газа наверх, чтобы страница могла считать ratio
+  // expose gas snapshot to parent so it can compute ratios
   useEffect(() => {
     if (!onGasSnapshotChange) return;
+
     const cur =
       current && Number.isFinite(current) && current > 0 ? current : null;
     const capVal =
@@ -116,14 +131,17 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
 
   const multiplierClick = (mul: number) => {
     const baseFee = current || 0;
+    if (!Number.isFinite(baseFee) || baseFee <= 0) return;
     const next = (baseFee * mul).toFixed(3);
     setInputGwei(next);
   };
 
-  const disabled = !isConnected || !capWeiBigInt || capWeiBigInt <= 0n || busy;
+  const disabled =
+    !isConnected || !capWeiBigInt || capWeiBigInt <= 0n || busy;
 
   const onCreate = async () => {
     if (disabled) return;
+
     setBusy(true);
     setErr(null);
     setTxHash(null);
@@ -159,22 +177,27 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
       }
 
       if (res.txHash) setTxHash(res.txHash as Hex);
+
       if (res.jarAddress) {
         const addr = res.jarAddress as `0x${string}`;
         setJarAddress(addr);
+
         try {
           localStorage.setItem('lastJarAddress', addr);
         } catch {
-          /* ignore */
+          // ignore localStorage error
         }
+
         onCreated?.(addr);
         setShowCelebration(true);
       }
     } catch (e: any) {
       const msg = String(e?.message || '');
       if (/User rejected/i.test(msg)) {
-        /* ignore */
-      } else setErr(e?.message ?? 'Unknown error');
+        // user closed / rejected wallet, do not show error
+      } else {
+        setErr(e?.message ?? 'Unknown error');
+      }
     } finally {
       setBusy(false);
     }
@@ -188,20 +211,21 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
 
   const onGweiChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
     const v = e.target.value.trim();
+    // allow only decimal with up to 6 decimals
     if (!/^(\d+(\.\d{0,6})?|\.\d{0,6})?$/.test(v)) return;
     setInputGwei(v);
   };
 
   /** ===== RENDER ===== */
   return (
-    // обёртка для абсолютной левой панели и маскота
+    // wrapper for absolute left panel and mascot
     <div className="relative">
-      {/* Mascot в верхнем левом углу карточки Create Jar */}
-      <div className="absolute left-0 -top-10 hidden sm:block">
+      {/* Mascot in the top-left corner of the Create Jar card */}
+      <div className="absolute left-0 -top-10">
         <MascotBadge />
       </div>
 
-      {/* LEFT FLOATING PANEL — компактный Example с реальными числами */}
+      {/* LEFT FLOATING PANEL — compact Example with live numbers */}
       <div className="pointer-events-auto absolute -left-[320px] top-2 hidden w-[280px] lg:block">
         <button
           type="button"
@@ -219,7 +243,7 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
           </span>
         </button>
 
-        {/* Плавное раскрытие */}
+        {/* Smooth collapse/expand */}
         <div
           className={[
             'overflow-hidden',
@@ -272,7 +296,7 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
       </div>
 
       {/* MAIN CARD */}
-      <div className="space-y-4">
+      <div className="relative space-y-4">
         {/* Input (Gwei) */}
         <label className="block text-center text-sm font-medium">
           Max gas price (gwei)
@@ -290,7 +314,9 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
         <div className="flex flex-wrap justify-center gap-2">
           <button
             onClick={() =>
-              setInputGwei(current ? current.toFixed(3) : '0')
+              setInputGwei(
+                current && current > 0 ? current.toFixed(3) : '0',
+              )
             }
             className="rounded-md bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15"
           >
@@ -316,13 +342,15 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
           </button>
         </div>
 
-        {/* 2-в-1: цифры + профиль */}
+        {/* Gas profile with live numbers */}
         <GasProfileMeter
           currentGwei={current && current > 0 ? current : null}
-          capGwei={inputGwei && Number(inputGwei) > 0 ? Number(inputGwei) : null}
+          capGwei={
+            inputGwei && Number(inputGwei) > 0 ? Number(inputGwei) : null
+          }
         />
 
-        {/* Create */}
+        {/* Create button */}
         <div className="flex justify-center">
           <button
             onClick={onCreate}

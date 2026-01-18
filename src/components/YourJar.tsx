@@ -3,12 +3,27 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAccount, usePublicClient } from 'wagmi';
 import { formatEther } from 'viem';
+
 import QrCode from '@/components/QrCode';
 import { withdrawFromJar } from '@/actions/createJar.client';
 
-export default function YourJar({ jarAddress }: { jarAddress: `0x${string}` | string }) {
+type Props = {
+  jarAddress: `0x${string}` | string;
+};
+
+/**
+ * YourJar
+ *
+ * Shows summary for a single jar:
+ * - owner
+ * - current balance
+ * - withdraw button if viewer is owner
+ * - QR toggle for sharing
+ */
+export default function YourJar({ jarAddress }: Props) {
   const publicClient = usePublicClient();
   const { address } = useAccount();
+
   const [owner, setOwner] = useState<string | null>(null);
   const [balance, setBalance] = useState<bigint | null>(null);
   const [showQR, setShowQR] = useState(true);
@@ -17,163 +32,172 @@ export default function YourJar({ jarAddress }: { jarAddress: `0x${string}` | st
 
   const addr = jarAddress as `0x${string}`;
 
+  const isOwner =
+    !!owner &&
+    !!address &&
+    owner.toLowerCase() === address.toLowerCase();
+
+  const balanceLabel = useMemo(() => {
+    if (balance === null) return '—';
+    const eth = Number(formatEther(balance));
+    return `${eth.toFixed(6)} ETH`;
+  }, [balance]);
+
+  const publicLink =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/jar/${addr}`
+      : `/jar/${addr}`;
+
+  // fetch owner + balance
   useEffect(() => {
+    if (!publicClient) return;
+
     let alive = true;
     (async () => {
       try {
-        if (!publicClient) return;
-        const [ownerRaw, bal] = await Promise.all([
+        const [ownerRes, balRes] = await Promise.all([
           publicClient.readContract({
             address: addr,
             abi: [
-              { type: 'function', name: 'owner', inputs: [], outputs: [{ type: 'address' }], stateMutability: 'view' }
+              {
+                type: 'function',
+                name: 'owner',
+                inputs: [],
+                outputs: [{ type: 'address' }],
+                stateMutability: 'view',
+              },
             ] as const,
             functionName: 'owner',
           }) as Promise<string>,
           publicClient.getBalance({ address: addr }),
         ]);
+
         if (!alive) return;
-        setOwner(ownerRaw);
-        setBalance(bal);
-      } catch {}
+        setOwner(ownerRes);
+        setBalance(balRes);
+      } catch (e: any) {
+        if (!alive) return;
+        setError(e?.message || 'Failed to load jar data.');
+      }
     })();
-    return () => { alive = false; };
+
+    const id = setInterval(() => {
+      if (!publicClient || !alive) return;
+      publicClient
+        .getBalance({ address: addr })
+        .then((b) => {
+          if (!alive) return;
+          setBalance(b);
+        })
+        .catch(() => {});
+    }, 25_000);
+
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
   }, [publicClient, addr]);
 
-  const link = useMemo(() => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    return `${origin}/jar/${addr}`;
-  }, [addr]);
-
-  const canWithdraw = !!owner && !!address && owner.toLowerCase() === address.toLowerCase();
-
-  const onCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(link);
-      alert('Copied link to clipboard');
-    } catch {}
-  };
-
   const onWithdraw = async () => {
-    if (!canWithdraw) return;
+    if (!isOwner || pending) return;
     setError(null);
     try {
       setPending(true);
       const res = await withdrawFromJar(addr);
       if (!res.success) {
-        setError(res.error || 'Не удалось выполнить вывод средств.');
-      } else {
-        if (publicClient) {
-          const bal = await publicClient.getBalance({ address: addr });
-          setBalance(bal);
+        setError(res.error || 'Failed to withdraw funds.');
+        return;
+      }
+      // refresh balance after successful withdraw
+      if (publicClient) {
+        try {
+          const b = await publicClient.getBalance({ address: addr });
+          setBalance(b);
+        } catch {
+          // ignore
         }
       }
     } catch (e: any) {
-      setError(e?.message || 'Не удалось выполнить вывод средств.');
+      setError(e?.message || 'Failed to withdraw funds.');
     } finally {
       setPending(false);
     }
   };
 
   return (
-    <div>
-      <h3 className="mb-3 text-xl font-semibold">Your Jar</h3>
-
-      <div className="mb-2 flex flex-wrap items-center gap-4 text-sm">
-        <div className="w-full sm:w-auto">
+    <div className="space-y-4 text-xs text-neutral-200 sm:text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
           <div className="text-neutral-400">Jar address</div>
-          <div className="max-w-[48ch] truncate" title={addr}>{addr}</div>
+          <div
+            className="max-w-[28rem] truncate font-mono text-[11px] text-neutral-100 sm:text-xs"
+            title={addr}
+          >
+            {addr}
+          </div>
         </div>
-        <div className="w-full sm:w-auto">
-          <div className="text-neutral-400">Owner</div>
-          <div className="max-w-[48ch] truncate" title={owner || '—'}>{owner || '—'}</div>
-        </div>
-        <div className="w-full sm:w-auto">
-          <div className="text-neutral-400">Balance</div>
-          <div>{balance === null ? '—' : `${Number(formatEther(balance)).toFixed(6)} ETH`}</div>
-        </div>
-      </div>
-
-      <div className="mb-3 flex flex-wrap gap-2">
-        <button onClick={onCopy} className="rounded-md bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15">
-          Copy link
-        </button>
-        <a className="rounded-md bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15" href={`/jar/${addr}`}>
-          Open public page
-        </a>
-        <button onClick={() => setShowQR((s) => !s)} className="rounded-md bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15">
+        <button
+          type="button"
+          onClick={() => setShowQR((v) => !v)}
+          className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-neutral-100 hover:bg-white/10"
+        >
           {showQR ? 'Hide QR' : 'Show QR'}
         </button>
       </div>
 
-      {showQR && (
-        <div className="mb-5 rounded-xl border border-white/10 bg-black/30 p-4">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center">
-            <div className="w-full max-w-[300px]">
-              <QrCode value={link} />
-            </div>
-            <div className="text-sm text-neutral-300">
-              <div className="mb-2 font-medium">Scan to open:</div>
-              <div className="max-w-[56ch] truncate" title={link}>{link}</div>
-              <button
-                onClick={() => {
-                  const ev = new CustomEvent('qr:download');
-                  window.dispatchEvent(ev);
-                }}
-                className="mt-3 rounded-md bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15"
-              >
-                Download PNG
-              </button>
-            </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-2xl border border-white/10 bg-black/50 p-3">
+          <div className="text-[11px] uppercase tracking-wide text-neutral-400">
+            Owner
           </div>
+          <div
+            className="mt-1 max-w-[20rem] truncate text-xs text-neutral-100 sm:text-sm"
+            title={owner || '—'}
+          >
+            {owner ?? '—'}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-black/50 p-3">
+          <div className="text-[11px] uppercase tracking-wide text-neutral-400">
+            Balance
+          </div>
+          <div className="mt-1 text-xs text-neutral-100 sm:text-sm">
+            {balanceLabel}
+          </div>
+        </div>
+      </div>
+
+      {isOwner && (
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={onWithdraw}
+            disabled={pending}
+            aria-busy={pending}
+            className="rounded-xl bg-[#0052FF] px-4 py-2 text-xs font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-50 hover:opacity-90 active:opacity-80 sm:text-sm"
+          >
+            {pending ? 'Withdrawing…' : 'Withdraw all'}
+          </button>
+          <p className="text-[11px] text-neutral-500 sm:text-xs">
+            Only the jar owner can withdraw tips. Funds go to your
+            connected wallet.
+          </p>
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-3">
-        <a
-          className="rounded-md bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15"
-          href={`https://basescan.org/address/${addr}`} target="_blank" rel="noreferrer"
-        >
-          Open in Basescan
-        </a>
-        <button
-          onClick={async () => {
-            if (!publicClient) return;
-            const bal = await publicClient.getBalance({ address: addr });
-            setBalance(bal);
-          }}
-          className="rounded-md bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15"
-        >
-          Refresh
-        </button>
+      {showQR && (
+        <div className="mt-1">
+          <QrCode value={publicLink} />
+          <p className="mt-2 text-[11px] text-neutral-400 sm:text-xs">
+            Scan to open this jar or share the link with supporters.
+          </p>
+        </div>
+      )}
 
-        {canWithdraw ? (
-          <button
-            onClick={onWithdraw}
-            disabled={!canWithdraw || pending}
-            aria-busy={pending}
-            className="ml-auto rounded-xl bg-[#0052FF] px-5 py-2.5 font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-50 hover:opacity-90 active:opacity-80"
-          >
-            {pending ? 'Withdrawing…' : 'Withdraw'}
-          </button>
-        ) : (
-          <span className="ml-auto rounded bg-white/5 px-2 py-1 text-xs text-neutral-400">Owner only</span>
-        )}
-      </div>
-
-      {/* компактная ошибка под блоком действий */}
       {error && (
-        <div className="mt-3 rounded-lg border border-red-400/30 bg-red-950/40 px-3 py-1.5 text-xs text-red-200">
-          <div className="flex items-start gap-2">
-            <span className="mt-1 inline-block h-3 w-3 shrink-0 rounded-full bg-red-400/80" />
-            <div className="flex-1">{error}</div>
-            <button
-              onClick={() => setError(null)}
-              className="ml-2 rounded-md bg-white/10 px-2 py-0.5 text-[11px] text-neutral-200 hover:bg-white/15"
-            >
-              ×
-            </button>
-          </div>
+        <div className="mt-2 rounded-lg border border-red-500/40 bg-red-950/40 px-3 py-2 text-[11px] text-red-200 sm:text-xs">
+          {error}
         </div>
       )}
     </div>

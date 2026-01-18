@@ -1,124 +1,141 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import React from 'react';
+
+type Props = {
+  progress?: number; // 0..1
+  size?: number;     // px
+  pulse?: boolean;
+};
 
 /**
- * Простая SVG-"банка".
- * progress: 0..1 — уровень заполнения
- * pulse: пульсация свечения
+ * JarVisual
+ *
+ * Small decorative jar used on the Create Jar view.
+ * - progress controls fill height (0..1)
+ * - pulse toggles a soft animation on the liquid
  */
 export default function JarVisual({
-  progress = 1,
+  progress = 0.5,
+  size = 100,
   pulse = false,
-  size = 120,
-}: {
-  progress?: number;
-  pulse?: boolean;
-  size?: number;
-}) {
-  const pct = Math.max(0, Math.min(1, progress));
+}: Props) {
+  const clamped = Math.max(0, Math.min(1, progress));
   const height = size;
   const width = size * 0.7;
-  const stroke = 3;
-  const radius = 12;
-  const innerPadding = 8;
-  const fillHeight = (height - innerPadding * 2) * pct;
-  const y = height - innerPadding - fillHeight;
-
-  const particlesRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    // простые "капли" при монтировании
-    const root = particlesRef.current;
-    if (!root) return;
-    for (let i = 0; i < 18; i++) {
-      const s = document.createElement('span');
-      s.textContent = '•';
-      s.style.position = 'absolute';
-      s.style.left = `${Math.random() * 100}%`;
-      s.style.top = `${-10 - Math.random() * 20}px`;
-      s.style.opacity = `${0.6 + Math.random() * 0.4}`;
-      s.style.fontSize = `${6 + Math.random() * 10}px`;
-      s.style.filter = 'drop-shadow(0 0 8px rgba(0,82,255,0.5))';
-      s.style.color = '#7ab4ff';
-      s.animate(
-        [
-          { transform: 'translateY(0) scale(1) rotate(0deg)' },
-          {
-            transform: `translate(${(Math.random() - 0.5) * 30}px, ${height / 2 + Math.random() * height / 3}px) scale(${1 + Math.random() * 0.6}) rotate(${(Math.random() - 0.5) * 120}deg)`,
-          },
-        ],
-        { duration: 1200 + Math.random() * 800, easing: 'ease-out', delay: Math.random() * 400 }
-      ).onfinish = () => s.remove();
-      root.appendChild(s);
-    }
-  }, [height]);
+  const fillHeight = clamped * (height * 0.65);
+  const fillY = height * 0.8 - fillHeight;
 
   return (
-    <div className="relative inline-block" style={{ width, height }}>
-      {/* glow */}
-      <div
-        className={`pointer-events-none absolute -inset-6 -z-10 rounded-[24px] blur-2xl transition-opacity ${
-          pulse ? 'opacity-80' : 'opacity-40'
-        }`}
-        style={{
-          background:
-            'radial-gradient(circle at 50% 80%, rgba(0,82,255,0.35), rgba(0,82,255,0) 60%)',
-        }}
-      />
-      {/* particles */}
-      <div ref={particlesRef} className="pointer-events-none absolute inset-0 overflow-hidden" />
-      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-        {/* outline jar */}
-        <rect
-          x={stroke}
-          y={stroke}
-          width={width - stroke * 2}
-          height={height - stroke * 2}
-          rx={radius}
-          ry={radius}
-          fill="rgba(255,255,255,0.02)"
-          stroke="rgba(255,255,255,0.15)"
-          strokeWidth={stroke}
-        />
-        {/* neck */}
-        <rect
-          x={width * 0.2}
-          y={stroke}
-          width={width * 0.6}
-          height={height * 0.12}
-          rx={radius / 2}
-          ry={radius / 2}
-          fill="rgba(255,255,255,0.04)"
-          stroke="rgba(255,255,255,0.15)"
-          strokeWidth={stroke * 0.8}
-        />
-        {/* fill */}
-        <rect
-          x={innerPadding + stroke}
-          y={y}
-          width={width - (innerPadding + stroke) * 2}
-          height={fillHeight}
-          rx={8}
-          ry={8}
-          fill="url(#jarFill)"
-        />
-        {/* gloss */}
-        <rect
-          x={innerPadding + stroke}
-          y={innerPadding + stroke}
-          width={(width - (innerPadding + stroke) * 2) * 0.25}
-          height={height * 0.6}
-          rx={12}
-          ry={12}
-          fill="rgba(255,255,255,0.06)"
-        />
+    <div
+      className="mx-auto flex items-center justify-center"
+      style={{ width, height }}
+    >
+      <svg
+        width={width}
+        height={height}
+        viewBox={`0 0 ${width} ${height}`}
+        className="drop-shadow-[0_0_20px_rgba(0,82,255,0.35)]"
+      >
+        {/* Jar outline */}
         <defs>
-          <linearGradient id="jarFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#7ab4ff" stopOpacity="0.95" />
-            <stop offset="100%" stopColor="#0052FF" stopOpacity="0.95" />
+          <linearGradient id="jar-outline" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0%" stopColor="#e5e7eb" />
+            <stop offset="100%" stopColor="#9ca3af" />
+          </linearGradient>
+          <linearGradient id="jar-fill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#60a5fa" />
+            <stop offset="100%" stopColor="#1d4ed8" />
           </linearGradient>
         </defs>
+
+        <g>
+          {/* Neck */}
+          <rect
+            x={width * 0.25}
+            y={height * 0.05}
+            width={width * 0.5}
+            height={height * 0.08}
+            rx={height * 0.02}
+            fill="#020617"
+            stroke="url(#jar-outline)"
+            strokeWidth={1.4}
+          />
+          {/* Lid */}
+          <rect
+            x={width * 0.22}
+            y={height * 0.02}
+            width={width * 0.56}
+            height={height * 0.04}
+            rx={height * 0.02}
+            fill="#111827"
+            stroke="url(#jar-outline)"
+            strokeWidth={1.2}
+          />
+          {/* Body */}
+          <rect
+            x={width * 0.15}
+            y={height * 0.12}
+            width={width * 0.7}
+            height={height * 0.7}
+            rx={width * 0.2}
+            fill="#020617"
+            stroke="url(#jar-outline)"
+            strokeWidth={1.6}
+          />
+        </g>
+
+        {/* Liquid */}
+        <g className={pulse ? 'animate-pulse' : ''}>
+          <rect
+            x={width * 0.17}
+            y={fillY}
+            width={width * 0.66}
+            height={fillHeight}
+            rx={width * 0.18}
+            fill="url(#jar-fill)"
+            opacity={0.92}
+          />
+          {/* Glow line on surface */}
+          <rect
+            x={width * 0.2}
+            y={fillY + 1}
+            width={width * 0.6}
+            height={height * 0.01}
+            rx={height * 0.005}
+            fill="#bfdbfe"
+            opacity={0.9}
+          />
+        </g>
+
+        {/* Small Base glyph circle */}
+        <g>
+          <circle
+            cx={width * 0.5}
+            cy={height * 0.42}
+            r={width * 0.16}
+            fill="#020617"
+            stroke="#1d4ed8"
+            strokeWidth={1.2}
+            opacity={0.95}
+          />
+          <circle
+            cx={width * 0.5}
+            cy={height * 0.42}
+            r={width * 0.08}
+            fill="#0f172a"
+          />
+          <text
+            x={width * 0.5}
+            y={height * 0.43}
+            textAnchor="middle"
+            fontSize={width * 0.09}
+            fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif"
+            fill="#e5e7eb"
+          >
+            B
+          </text>
+        </g>
       </svg>
     </div>
   );
