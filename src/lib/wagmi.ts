@@ -3,18 +3,19 @@ import { createConfig, http } from 'wagmi';
 import { base, baseSepolia } from 'wagmi/chains';
 import { injected, coinbaseWallet } from 'wagmi/connectors';
 import { fallback } from 'viem';
+import { env } from '@/config/env';
 
-// RPC из .env (сохраняю твою идею с fallback для mainnet)
-const rpcBasePrimary = process.env.NEXT_PUBLIC_RPC_URL_BASE || 'https://mainnet.base.org';
-const rpcBaseFallback = process.env.NEXT_PUBLIC_RPC_URL_BASE_FALLBACK || '';
-const rpcSepolia = process.env.NEXT_PUBLIC_RPC_URL_BASE_SEPOLIA || 'https://sepolia.base.org';
+// RPC endpoints come from env; we keep one primary and an optional fallback for Base mainnet.
+const rpcBasePrimary = env.RPC_URL_BASE;
+const rpcBaseFallback = env.RPC_URL_BASE_FALLBACK;
+const rpcSepolia = env.RPC_URL_BASE_SEPOLIA;
 
 export const config = createConfig({
   chains: [base, baseSepolia],
   connectors: [
     injected({ shimDisconnect: true }),
     coinbaseWallet({
-      appName: process.env.NEXT_PUBLIC_APP_NAME || 'Gas-Fused Tip Jar',
+      appName: env.APP_NAME,
     }),
   ],
   transports: {

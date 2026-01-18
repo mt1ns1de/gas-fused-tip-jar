@@ -1,5 +1,7 @@
 // src/lib/normalizeJars.ts
 
+import { env } from '@/config/env';
+
 export type JarRow = {
   jar: `0x${string}`;
   blockNumber: string;
@@ -7,36 +9,40 @@ export type JarRow = {
   chainId?: number | null;
 };
 
+// Active chain id as seen by the app; we infer it from NEXT_PUBLIC_NETWORK.
 export const ACTIVE_CHAIN_ID =
-  process.env.NEXT_PUBLIC_NETWORK === 'baseSepolia' ? 84532 : 8453;
+  env.NETWORK === 'baseSepolia' ? 84532 : 8453;
 
 /**
- * 1) фильтр по активной сети (если chainId есть),
- * 2) дедуп по jar (оставляем запись с максимальным blockNumber),
- * 3) сортировка по blockNumber по убыванию.
+ * Normalizes raw jar rows:
+ *  1) filter by ACTIVE_CHAIN_ID (if chainId is present),
+ *  2) deduplicate by jar (keep the row with the largest blockNumber),
+ *  3) sort by blockNumber descending.
  */
 export function normalizeJars(rows: JarRow[]): JarRow[] {
   if (!rows?.length) return [];
 
-  const chainFiltered = rows.filter((r) => {
-    if (r.chainId == null) return true;
-    return r.chainId === ACTIVE_CHAIN_ID;
-  });
-
   const byJar = new Map<string, JarRow>();
 
-  for (const r of chainFiltered) {
-    const existing = byJar.get(r.jar);
+  for (const row of rows) {
+    if (!row.jar) continue;
+    if (row.chainId && row.chainId !== ACTIVE_CHAIN_ID) continue;
+
+    const key = row.jar.toLowerCase();
+    const existing = byJar.get(key);
     if (!existing) {
-      byJar.set(r.jar, r);
-    } else {
-      try {
-        const cur = BigInt(existing.blockNumber);
-        const next = BigInt(r.blockNumber);
-        if (next > cur) byJar.set(r.jar, r);
-      } catch {
-        // ignore parse errors
+      byJar.set(key, row);
+      continue;
+    }
+
+    try {
+      const prev = BigInt(existing.blockNumber);
+      const next = BigInt(row.blockNumber);
+      if (next > prev) {
+        byJar.set(key, row);
       }
+    } catch {
+      // If blockNumber is not parseable, keep the existing one.
     }
   }
 
