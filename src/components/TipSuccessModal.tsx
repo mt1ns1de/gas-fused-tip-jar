@@ -1,16 +1,23 @@
 'use client';
 
-import { useEffect } from 'react';
+import React, { useState } from 'react';
 
 type Props = {
   open: boolean;
   onClose: () => void;
-  amountEth: string;
-  txHash?: `0x${string}` | string;
-  jarAddress: `0x${string}` | string;
+  amountEth: string; // as string from state
+  txHash?: string;
+  jarAddress: string;
   shareLink?: string;
 };
 
+/**
+ * TipSuccessModal
+ *
+ * Shown after a successful tip:
+ * - displays amount, tx link and jar address
+ * - optional share link with copy button
+ */
 export default function TipSuccessModal({
   open,
   onClose,
@@ -19,106 +26,122 @@ export default function TipSuccessModal({
   jarAddress,
   shareLink,
 }: Props) {
-  // короткий конфетти-шот в стиле Base (буква "B", мягкий выстрел ≤600ms)
-  useEffect(() => {
-    if (!open) return;
-
-    const spawn = (x: number, y: number) => {
-      const s = document.createElement('span');
-      s.textContent = 'B';
-      s.className =
-        'pointer-events-none fixed z-[100] select-none font-extrabold drop-shadow-[0_0_6px_rgba(0,82,255,0.6)]';
-      s.style.left = `${x}px`;
-      s.style.top = `${y}px`;
-      s.style.color = '#0052FF';
-      s.style.fontSize = `${10 + Math.random() * 8}px`;
-      s.style.opacity = '0.95';
-      document.body.appendChild(s);
-
-      const dx = (Math.random() - 0.5) * 160;
-      const dy = 120 + Math.random() * 80;
-      const rot = (Math.random() - 0.5) * 720;
-
-      s.animate(
-        [
-          { transform: 'translate(0,0) rotate(0deg)', opacity: 0.95 },
-          { transform: `translate(${dx}px, ${dy}px) rotate(${rot}deg)`, opacity: 0 },
-        ],
-        { duration: 600, easing: 'ease-out' }
-      ).onfinish = () => s.remove();
-    };
-
-    const { innerWidth, innerHeight } = window;
-    const cx = innerWidth / 2;
-    const cy = innerHeight / 3;
-    for (let i = 0; i < 36; i++) {
-      setTimeout(() => spawn(cx + (Math.random() - 0.5) * 40, cy + (Math.random() - 0.5) * 20), i * 8);
-    }
-  }, [open]);
+  const [copied, setCopied] = useState(false);
 
   if (!open) return null;
 
-  const basescanTx = txHash ? `https://basescan.org/tx/${txHash}` : undefined;
-  const basescanAddr = `https://basescan.org/address/${jarAddress}`;
+  const explorerTx = txHash
+    ? `https://basescan.org/tx/${txHash}`
+    : undefined;
+  const explorerJar = jarAddress
+    ? `https://basescan.org/address/${jarAddress}`
+    : undefined;
+
+  const onCopy = async () => {
+    if (!shareLink) return;
+    try {
+      await navigator.clipboard.writeText(shareLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {
+      // ignore clipboard errors
+    }
+  };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-[90] grid place-items-center bg-black/60 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md rounded-2xl border border-white/10 bg-neutral-950/90 p-6 text-white shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="text-xl font-semibold">Tip sent 🎉</h3>
-        <p className="mt-1 text-neutral-300">
-          Thanks! Your tip <span className="font-medium">{amountEth} ETH</span> is on Base.
-        </p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      <div className="relative w-full max-w-md rounded-2xl border border-white/10 bg-black/90 p-5 text-sm text-neutral-100 shadow-2xl">
+        {/* Close */}
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-3 top-3 rounded-full bg-white/10 px-2 py-1 text-xs text-neutral-200 hover:bg-white/20"
+        >
+          ×
+        </button>
 
-        <div className="mt-4 space-x-2 space-y-2 text-sm">
-          {basescanTx && (
-            <a
-              href={basescanTx}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-block rounded-md bg-white/10 px-3 py-1.5 underline hover:bg-white/15"
-            >
-              View transaction on Basescan
-            </a>
-          )}
-          <a
-            href={basescanAddr}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-block rounded-md bg-white/10 px-3 py-1.5 underline hover:bg-white/15"
-          >
-            Open jar on Basescan
-          </a>
-          {shareLink && (
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(shareLink);
-                } catch {}
-              }}
-              className="inline-block rounded-md bg-white/10 px-3 py-1.5 hover:bg-white/15"
-            >
-              Copy jar link
-            </button>
-          )}
+        <div className="mb-3 text-center">
+          <h2 className="text-lg font-semibold text-white">
+            Thanks for your tip! 💙
+          </h2>
+          <p className="mt-1 text-xs text-neutral-400">
+            Your support just went on-chain on Base.
+          </p>
         </div>
 
-        <div className="mt-6 flex justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl bg-[#0052FF] px-5 py-2.5 font-medium text-white transition hover:opacity-90 active:opacity-80"
-          >
-            Close
-          </button>
+        <div className="space-y-4">
+          {/* Amount */}
+          <div className="rounded-xl border border-white/10 bg-black/60 px-4 py-3 text-center">
+            <div className="text-xs uppercase tracking-wide text-neutral-400">
+              Amount
+            </div>
+            <div className="text-xl font-semibold text-white">
+              {amountEth || '0'} ETH
+            </div>
+          </div>
+
+          {/* Links */}
+          <div className="space-y-2 text-xs">
+            {explorerTx && (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-neutral-400">Transaction</span>
+                <a
+                  href={explorerTx}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-md bg-white/10 px-3 py-1 text-xs text-neutral-50 hover:bg-white/20"
+                >
+                  View on Basescan
+                </a>
+              </div>
+            )}
+
+            {explorerJar && (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-neutral-400">Jar contract</span>
+                <a
+                  href={explorerJar}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-md bg-white/10 px-3 py-1 text-xs text-neutral-50 hover:bg-white/20"
+                >
+                  View jar
+                </a>
+              </div>
+            )}
+          </div>
+
+          {/* Share link */}
+          {shareLink && (
+            <div className="space-y-1">
+              <div className="text-[11px] uppercase tracking-wide text-neutral-400">
+                Share this jar
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 rounded-lg border border-white/10 bg-black/60 px-3 py-2 text-xs text-neutral-200">
+                  <span
+                    className="block max-w-full truncate"
+                    title={shareLink}
+                  >
+                    {shareLink}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={onCopy}
+                  className="shrink-0 rounded-lg bg-[#0052FF] px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90 active:opacity-80"
+                >
+                  {copied ? 'Copied ✓' : 'Copy'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="pt-2 text-[11px] text-neutral-500">
+            You can keep tipping this jar or share the link with friends,
+            followers and collaborators who want to support this address on
+            Base.
+          </div>
         </div>
       </div>
     </div>

@@ -1,144 +1,98 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import React, { useState } from 'react';
 
-type Cta = { label: string; href: string; target?: '_self' | '_blank' };
-
-type ShareModalProps = {
+type Props = {
   open: boolean;
   onClose: () => void;
   title: string;
   subtitle?: string;
-  /** Публичная ссылка на /jar/[address] */
   link?: string;
-  /** Показать кнопку Copy link */
-  showCopy?: boolean;
-  /** Основная кнопка (слева) — например, Open public page / Open Jar page */
-  primaryCta?: Cta;
-  /** Дополнительная кнопка (справа) — например, View on Basescan */
-  secondaryCta?: Cta;
 };
 
+/**
+ * ShareModal
+ *
+ * Generic share modal used after jar creation.
+ * Shows:
+ * - title / subtitle
+ * - shareable link with a copy button
+ */
 export default function ShareModal({
   open,
   onClose,
   title,
   subtitle,
   link,
-  showCopy = true,
-  primaryCta,
-  secondaryCta,
-}: ShareModalProps) {
+}: Props) {
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    if (!open) {
-      setCopied(false);
-      return;
-    }
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
-
-  const displayLink = link ?? '';
+  if (!open) return null;
 
   const onCopy = async () => {
+    if (!link) return;
     try {
-      if (!displayLink) return;
-      await navigator.clipboard.writeText(displayLink);
+      await navigator.clipboard.writeText(link);
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
     } catch {
-      // ignore
+      // ignore clipboard errors
     }
   };
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          key="share-modal"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.18 }}
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      <div className="relative w-full max-w-md rounded-2xl border border-white/10 bg-black/90 p-5 text-sm text-neutral-100 shadow-2xl">
+        {/* Close button */}
+        <button
+          type="button"
           onClick={onClose}
+          className="absolute right-3 top-3 rounded-full bg-white/10 px-2 py-1 text-xs text-neutral-200 hover:bg-white/20"
         >
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.96 }}
-            transition={{ duration: 0.22, ease: 'easeOut' }}
-            className="w-full max-w-xl rounded-2xl border border-[#2563eb]/50 bg-gradient-to-b from-[#0a1630] to-[#070b18] p-6 text-white shadow-[0_24px_70px_rgba(10,20,40,0.95)]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-2xl font-bold">{title}</h3>
-            {subtitle && (
-              <p className="mt-2 text-sm text-neutral-300">{subtitle}</p>
-            )}
+          ×
+        </button>
 
-            <div className="mt-4">
-              <label className="mb-1 block text-xs text-neutral-400">
-                Public link
-              </label>
-              <div className="rounded-lg border border-white/10 bg-black/40 px-3 py-2 font-mono text-sm text-neutral-200">
-                {displayLink || '—'}
-              </div>
+        <div className="mb-3">
+          <h2 className="text-lg font-semibold text-white">{title}</h2>
+          {subtitle && (
+            <p className="mt-1 text-xs text-neutral-400">{subtitle}</p>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <div className="mb-1 text-[11px] uppercase tracking-wide text-neutral-400">
+              Share your link
             </div>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              {showCopy && (
-                <button
-                  type="button"
-                  onClick={onCopy}
-                  className="rounded-md bg-white/10 px-4 py-2 text-sm hover:bg-white/15"
-                >
-                  {copied ? 'Copied ✓' : 'Copy link'}
-                </button>
-              )}
-
-              {primaryCta && (
-                <a
-                  href={primaryCta.href}
-                  target={primaryCta.target ?? '_self'}
-                  rel={primaryCta.target === '_blank' ? 'noreferrer' : undefined}
-                  className="rounded-md bg-white/10 px-4 py-2 text-sm hover:bg-white/15"
-                >
-                  {primaryCta.label}
-                </a>
-              )}
-
-              {secondaryCta && (
-                <a
-                  href={secondaryCta.href}
-                  target={secondaryCta.target ?? '_blank'}
-                  rel="noreferrer"
-                  className="rounded-md bg-white/10 px-4 py-2 text-sm hover:bg-white/15"
-                >
-                  {secondaryCta.label}
-                </a>
-              )}
-
-              <div className="grow" />
-
+            <div className="flex items-center gap-2">
+              <div className="flex-1 rounded-lg border border-white/10 bg-black/50 px-3 py-2 text-xs text-neutral-200">
+                {link ? (
+                  <span className="block max-w-full truncate" title={link}>
+                    {link}
+                  </span>
+                ) : (
+                  <span className="text-neutral-500">
+                    Link will appear here once the jar address is known.
+                  </span>
+                )}
+              </div>
               <button
                 type="button"
-                onClick={onClose}
-                className="rounded-md bg-[#2563eb] px-4 py-2 text-sm font-medium text-white hover:opacity-90 active:opacity-80"
+                onClick={onCopy}
+                disabled={!link}
+                className="shrink-0 rounded-lg bg-[#0052FF] px-3 py-1.5 text-xs font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-50 hover:opacity-90 active:opacity-80"
               >
-                Close
+                {copied ? 'Copied ✓' : 'Copy'}
               </button>
             </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+          </div>
+
+          <div className="text-[11px] text-neutral-500">
+            You can drop this link into your X / Farcaster bio, add it to your
+            website, or send it directly to friends who want to tip you on Base.
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
