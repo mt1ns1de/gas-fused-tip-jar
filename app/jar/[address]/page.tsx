@@ -6,36 +6,20 @@ import { useParams } from 'next/navigation';
 import { useAccount, usePublicClient } from 'wagmi';
 import CursorAura from '@/components/CursorAura';
 import WalletButton from '@/components/WalletButton';
-import {
-  formatEther,
-  formatGwei,
-  Hex,
-  parseEther,
-  parseAbiItem,
-} from 'viem';
-import { TIPJAR_ABI } from '@/lib/abiTipJar';
+import { formatEther, Hex, parseEther } from 'viem';
 import { getPrimaryName } from '@/lib/identity';
 import Avatar from '@/components/Avatar';
 import Slogan from '@/components/Slogan';
 import TipSuccessModal from '@/components/TipSuccessModal';
 import { withdrawFromJar } from '@/actions/createJar.client';
 
-/** ===== Utils ===== */
+import { useJarTips, type TipItem } from '@/hooks/useJarTips';
+import { useEthPrice } from '@/hooks/useEthPrice';
+import { useJarOwner } from '@/hooks/useJarOwner';
+import { useJarGasFuse } from '@/hooks/useJarGasFuse';
+import TipCard from '@/components/TipCard';
 
-function sanitizeMessage(s: unknown, max = 240): string {
-  if (!s || typeof s !== 'string') return '';
-  const stripped = s.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
-  if (stripped.length <= max) return stripped;
-  return stripped.slice(0, max - 1) + '…';
-}
-
-type TipItem = {
-  txHash: Hex;
-  from: `0x${string}`;
-  amountWei: bigint;
-  message: string;
-  blockNumber: bigint;
-};
+/* ========================= Utils ========================= */
 
 function useMounted() {
   const [m, setM] = useState(false);
@@ -43,149 +27,7 @@ function useMounted() {
   return m;
 }
 
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  attempts = 3,
-  delayMs = 500,
-): Promise<T> {
-  let lastErr: any;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn();
-    } catch (e: any) {
-      lastErr = e;
-      const msg = String(e?.message || '');
-      const code = Number(e?.code);
-      if (
-        i < attempts - 1 &&
-        (code === -32011 ||
-          /backend.+healthy/i.test(msg) ||
-          /timeout/i.test(msg))
-      ) {
-        await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
-        continue;
-      }
-      break;
-    }
-  }
-  throw lastErr;
-}
-
-/** ===== Owner cache (5 min TTL) ===== */
-
-const OWNER_CACHE_KEY = 'jar_owner_cache_v1';
-type OwnerCache = Record<string, { owner: string; ts: number }>;
-
-function getOwnerCache(): OwnerCache {
-  try {
-    const raw = localStorage.getItem(OWNER_CACHE_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw) as OwnerCache;
-  } catch {
-    return {};
-  }
-}
-function setOwnerCache(jar: string, owner: string) {
-  try {
-    const cache = getOwnerCache();
-    cache[jar.toLowerCase()] = { owner, ts: Date.now() };
-    localStorage.setItem(OWNER_CACHE_KEY, JSON.stringify(cache));
-  } catch {}
-}
-function getCachedOwner(jar: string): string | null {
-  try {
-    const cache = getOwnerCache();
-    const rec = cache[jar.toLowerCase()];
-    if (!rec) return null;
-    const age = Date.now() - rec.ts;
-    if (age > 5 * 60_000) return null; // 5 minutes
-    return rec.owner;
-  } catch {
-    return null;
-  }
-}
-
-/** ===== Tip cache in localStorage (per jar) ===== */
-
-const TIP_CACHE_KEY = 'jar_tip_cache_v1';
-
-type TipItemSerialized = {
-  txHash: string;
-  from: string;
-  amountWei: string;
-  message: string;
-  blockNumber: string;
-};
-
-type TipCacheRecord = {
-  lastBlock: string; // последний блок, до которого мы уже ходили
-  tips: TipItemSerialized[];
-};
-
-type TipCacheAll = Record<string, TipCacheRecord>;
-
-function serializeTips(tips: TipItem[]): TipItemSerialized[] {
-  return tips.map((t) => ({
-    txHash: t.txHash,
-    from: t.from,
-    amountWei: t.amountWei.toString(),
-    message: t.message,
-    blockNumber: t.blockNumber.toString(),
-  }));
-}
-
-function deserializeTips(arr: TipItemSerialized[]): TipItem[] {
-  return arr.map((t) => ({
-    txHash: t.txHash as Hex,
-    from: t.from as `0x${string}`,
-    amountWei: BigInt(t.amountWei),
-    message: t.message,
-    blockNumber: BigInt(t.blockNumber),
-  }));
-}
-
-function getTipCacheAll(): TipCacheAll {
-  try {
-    const raw = localStorage.getItem(TIP_CACHE_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw) as TipCacheAll;
-  } catch {
-    return {};
-  }
-}
-
-function getTipCacheForJar(jar: string): TipCacheRecord | null {
-  try {
-    const all = getTipCacheAll();
-    return all[jar.toLowerCase()] || null;
-  } catch {
-    return null;
-  }
-}
-
-function setTipCacheForJar(jar: string, rec: TipCacheRecord) {
-  try {
-    const all = getTipCacheAll();
-    all[jar.toLowerCase()] = rec;
-    localStorage.setItem(TIP_CACHE_KEY, JSON.stringify(all));
-  } catch {}
-}
-
-/** ===== Log filter + rate-limit helpers ===== */
-
-const TIPPED_EVENT = parseAbiItem(
-  'event Tipped(address indexed from, uint256 amount, string message)',
-);
-
-const sleep = (ms: number) =>
-  new Promise((r) => setTimeout(r, ms + Math.random() * 200));
-let tipsLoadingLock = false;
-const isPageVisible = () =>
-  typeof document !== 'undefined'
-    ? document.visibilityState === 'visible'
-    : true;
-
-/** ===== Page ===== */
+/* ========================= Page ========================= */
 
 export default function JarPublicPage() {
   const mounted = useMounted();
@@ -194,9 +36,9 @@ export default function JarPublicPage() {
   const params = useParams<{ address: string }>();
   const jar = params.address as `0x${string}`;
 
-  // ===== amount / price / UI =====
+  /* ===== Amount / price / UI ===== */
   const [ethAmount, setEthAmount] = useState('0.0001');
-  const [ethUsd, setEthUsd] = useState<number | null>(null);
+  const { ethUsd } = useEthPrice();
   const [usdApprox, setUsdApprox] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [pending, setPending] = useState(false);
@@ -207,30 +49,42 @@ export default function JarPublicPage() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [lastTx, setLastTx] = useState<`0x${string}` | string | null>(null);
 
-  // ===== tips feed =====
-  const [tips, setTips] = useState<TipItem[]>([]);
-  const [loadingFeed, setLoadingFeed] = useState(false);
-  const [justRefreshed, setJustRefreshed] = useState(false);
+  // tip card modal
+  const [showTipCard, setShowTipCard] = useState(false);
 
-  // адрес -> имя (.eth/.base) кеш
+  /* ===== Tips feed (hook) ===== */
+  const {
+    tips,
+    loadingFeed,
+    justRefreshed,
+    refreshIncremental,
+    handleRefreshClick,
+  } = useJarTips(jar, publicClient as any);
+
+  // address -> name (.eth / .base) cache
   const [nameMap, setNameMap] = useState<Record<string, string | null>>({});
 
-  // ===== owner panel state =====
-  const [owner, setOwner] = useState<string | null>(null);
-  const [jarBalance, setJarBalance] = useState<bigint | null>(null);
+  /* ===== Owner panel (hook) ===== */
+  const { owner, jarBalance, refreshOwner } = useJarOwner(
+    jar,
+    publicClient as any,
+  );
   const [withdrawing, setWithdrawing] = useState(false);
   const canWithdraw =
     !!owner && !!address && owner.toLowerCase() === address.toLowerCase();
 
-  // ===== локальные ошибки (красиво, не навязчиво) =====
+  /* ===== Local errors (tip + withdraw) ===== */
   const [tipError, setTipError] = useState<string | null>(null);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
 
-  // ===== fuse / gas panel =====
-  const [jarCapGwei, setJarCapGwei] = useState<number | null>(null);
-  const [netGasGwei, setNetGasGwei] = useState<number | null>(null);
+  /* ===== Fuse / gas panel (hook) ===== */
+  const { jarCapGwei, netGasGwei, fuseBadge, refreshGas } = useJarGasFuse(
+    jar,
+    publicClient as any,
+  );
+  const fuseDescription = fuseBadge?.description;
 
-  // ===== helpers =====
+  /* ===== Helpers ===== */
   const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
   const displayName = (a: `0x${string}`) => {
     const n = nameMap[a.toLowerCase()];
@@ -244,57 +98,8 @@ export default function JarPublicPage() {
     return usd < 0.01 ? '<$0.01' : `$${usd.toFixed(2)}`;
   };
 
-  /** ===== ETH price with caching ===== */
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const r = await fetch(
-          'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
-          { cache: 'no-store' },
-        );
-        const j = await r.json();
-        const price = j?.ethereum?.usd as number | undefined;
-        if (alive && price) {
-          setEthUsd(price);
-          try {
-            localStorage.setItem(
-              'eth_usd_price',
-              JSON.stringify({ price, ts: Date.now() }),
-            );
-          } catch {}
-        }
-      } catch {
-        try {
-          const raw = localStorage.getItem('eth_usd_price');
-          if (raw) {
-            const { price } = JSON.parse(raw);
-            if (price) setEthUsd(price);
-          }
-        } catch {}
-      }
-    })();
-    const id = setInterval(() => {
-      fetch(
-        'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
-        {
-          cache: 'no-store',
-        },
-      )
-        .then((r) => r.json())
-        .then((j) => {
-          const p = j?.ethereum?.usd as number | undefined;
-          if (p) setEthUsd(p);
-        })
-        .catch(() => {});
-    }, 60_000);
-    return () => {
-      alive = false;
-      clearInterval(id);
-    };
-  }, []);
+  /* ========================= Debounced USD approximation ========================= */
 
-  /** ===== Debounced USD approximation ===== */
   const debounceIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (debounceIdRef.current) clearTimeout(debounceIdRef.current);
@@ -311,7 +116,8 @@ export default function JarPublicPage() {
     };
   }, [ethAmount, ethUsd]);
 
-  /** ===== Stable USD presets (1/5/10/50) ===== */
+  /* ========================= Stable USD presets (1/5/10/50) ========================= */
+
   const presetUsd = (usd: number) => {
     if (!ethUsd) return;
     const eth = usd / ethUsd;
@@ -319,7 +125,8 @@ export default function JarPublicPage() {
     setEthAmount(String(fixed));
   };
 
-  /** ===== Input validation (ETH) ===== */
+  /* ========================= Input validation (ETH) ========================= */
+
   const onAmountChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
     const v = e.target.value.trim();
     if (!/^(\d+(\.\d{0,18})?|\.\d{0,18})?$/.test(v)) return;
@@ -327,10 +134,10 @@ export default function JarPublicPage() {
     setEthAmount(normalized);
   };
 
-  /** ===== Send tip ===== */
+  /* ========================= Send tip ========================= */
+
   const canSend = useMemo(
-    () =>
-      isConnected && !!ethAmount && Number(ethAmount) > 0 && !cooldown,
+    () => isConnected && !!ethAmount && Number(ethAmount) > 0 && !cooldown,
     [isConnected, ethAmount, cooldown],
   );
 
@@ -350,10 +157,10 @@ export default function JarPublicPage() {
         setMessage('');
         setLastTx(res.txHash || null);
         setShowSuccess(true);
-        // parallel refresh
-        void loadTipsIncremental(true);
-        void refreshOwnerPanel(true);
-        void refreshGasPanel(true);
+        // parallel refresh: tips + owner + gas
+        void refreshIncremental(true);
+        void refreshOwner(true);
+        void refreshGas(true);
       } else {
         setTipError(res.error || 'Failed to send tip.');
       }
@@ -365,509 +172,8 @@ export default function JarPublicPage() {
     }
   };
 
-  /** ===== Fuse ratio + UX text ===== */
-  const fuseRatio = useMemo(() => {
-    if (
-      jarCapGwei === null ||
-      netGasGwei === null ||
-      jarCapGwei <= 0 ||
-      netGasGwei <= 0
-    )
-      return null;
-    return jarCapGwei / netGasGwei;
-  }, [jarCapGwei, netGasGwei]);
+  /* ========================= Resolve names (ens/basename) ========================= */
 
-  const fuseBadge = useMemo(() => {
-    if (!fuseRatio) return null;
-
-    if (fuseRatio < 1) {
-      return {
-        label: 'Cap below gas',
-        className:
-          'border-amber-400/50 bg-amber-500/10 text-amber-100',
-        description:
-          'Gas is currently above this jar’s fuse cap. Some tips may revert until fees cool down.',
-      };
-    }
-
-    if (fuseRatio <= 1.7) {
-      return {
-        label: 'Balanced fuse',
-        className:
-          'border-emerald-400/40 bg-emerald-500/10 text-emerald-100',
-        description:
-          'Fuse cap sits in a balanced zone. Supporters stay protected while tips usually go through.',
-      };
-    }
-
-    return {
-      label: 'Loose fuse',
-      className: 'border-sky-400/40 bg-sky-500/10 text-sky-100',
-      description:
-        'Fuse cap is well above current gas. Tips are unlikely to fail on gas, but fees can be higher if gas spikes later.',
-    };
-  }, [fuseRatio]);
-
-  const fuseDescription = fuseBadge?.description;
-
-  /** ===== Dedup helper ===== */
-  function dedupAndSortTips(arr: TipItem[]): TipItem[] {
-    const map = new Map<string, TipItem>();
-    for (const t of arr) {
-      const k = `${t.txHash}-${t.from}-${t.amountWei.toString()}-${t.blockNumber.toString()}`;
-      map.set(k, t);
-    }
-    const unique = Array.from(map.values());
-    unique.sort((a, b) => Number(b.blockNumber - a.blockNumber));
-    return unique;
-  }
-
-  /** ===== Tips loader: shallow (быстрый) ===== */
-  async function loadTipsShallow(silent = false) {
-    if (!publicClient) return;
-    if (!isPageVisible()) return;
-    if (tipsLoadingLock) return;
-    tipsLoadingLock = true;
-    if (!silent) setLoadingFeed(true);
-
-    try {
-      const latest = await withRetry(() => publicClient.getBlockNumber());
-      let to = latest;
-      let window = 4_000n; // небольшое окно
-      let chunks = 0;
-      const maxChunks = 4; // всего ~16k блоков
-      const acc: TipItem[] = [];
-
-      let backoffMs = 600;
-
-      while (to >= 0n && chunks < maxChunks) {
-        const from = to > window ? to - window : 0n;
-
-        try {
-          const logs = await publicClient.getLogs({
-            address: jar,
-            fromBlock: from,
-            toBlock: to,
-            event: TIPPED_EVENT,
-          });
-
-          for (const lg of logs) {
-            try {
-              const ev = lg as unknown as {
-                args?: {
-                  from?: `0x${string}`;
-                  amount?: bigint;
-                  message?: string;
-                };
-                transactionHash?: Hex;
-                blockNumber?: bigint;
-              };
-
-              const args = ev.args || {};
-              const fromAddr = args.from as `0x${string}` | undefined;
-              const amountBI = args.amount as bigint | undefined;
-
-              if (!fromAddr || amountBI === undefined) continue;
-
-              const msg = sanitizeMessage(args.message ?? '');
-
-              acc.push({
-                txHash: ev.transactionHash || ('0x' as Hex),
-                from: fromAddr,
-                amountWei: amountBI,
-                message: msg,
-                blockNumber: ev.blockNumber ?? 0n,
-              });
-            } catch {
-              // skip
-            }
-          }
-
-          backoffMs = 600;
-        } catch (err: any) {
-          const msg = String(err?.message || '');
-          const code = Number(err?.code);
-          if (
-            msg.includes('over rate limit') ||
-            code === -32016 ||
-            code === 429
-          ) {
-            window = window / 2n || 1n;
-            await sleep(backoffMs);
-            backoffMs = Math.min(backoffMs * 2, 5000);
-            continue;
-          }
-          if (
-            msg.includes('no backend is currently healthy') ||
-            code === -32011 ||
-            /timeout/i.test(msg)
-          ) {
-            window = window / 2n || 1n;
-            await sleep(backoffMs);
-            backoffMs = Math.min(backoffMs * 2, 5000);
-            continue;
-          }
-          throw err;
-        }
-
-        to = from > 0n ? from - 1n : 0n;
-        chunks++;
-      }
-
-      const merged = dedupAndSortTips(acc);
-      setTips(merged);
-      // Шаллоу не кладём в кэш, кэш будет от deep
-    } catch (e) {
-      if (!silent) console.error('Failed to load shallow tips:', e);
-    } finally {
-      if (!silent) setLoadingFeed(false);
-      tipsLoadingLock = false;
-    }
-  }
-
-  /** ===== Tips loader: incremental (от lastBlock в кэше) ===== */
-  async function loadTipsIncremental(silent = false) {
-    if (!publicClient) return;
-    if (!isPageVisible()) return;
-    if (tipsLoadingLock) return;
-    const cached = getTipCacheForJar(jar);
-    if (!cached) {
-      // если нет кэша — просто быстрый свежий слой
-      return loadTipsShallow(silent);
-    }
-
-    tipsLoadingLock = true;
-    if (!silent) setLoadingFeed(true);
-
-    try {
-      const latest = await withRetry(() => publicClient.getBlockNumber());
-      const fromBlockNew = BigInt(cached.lastBlock || '0') + 1n;
-
-      let acc = deserializeTips(cached.tips);
-
-      if (fromBlockNew <= latest) {
-        try {
-          const logs = await publicClient.getLogs({
-            address: jar,
-            fromBlock: fromBlockNew,
-            toBlock: latest,
-            event: TIPPED_EVENT,
-          });
-
-          const fresh: TipItem[] = [];
-          for (const lg of logs) {
-            try {
-              const ev = lg as unknown as {
-                args?: {
-                  from?: `0x${string}`;
-                  amount?: bigint;
-                  message?: string;
-                };
-                transactionHash?: Hex;
-                blockNumber?: bigint;
-              };
-
-              const args = ev.args || {};
-              const fromAddr = args.from as `0x${string}` | undefined;
-              const amountBI = args.amount as bigint | undefined;
-
-              if (!fromAddr || amountBI === undefined) continue;
-
-              const msg = sanitizeMessage(args.message ?? '');
-
-              fresh.push({
-                txHash: ev.transactionHash || ('0x' as Hex),
-                from: fromAddr,
-                amountWei: amountBI,
-                message: msg,
-                blockNumber: ev.blockNumber ?? 0n,
-              });
-            } catch {
-              // skip
-            }
-          }
-
-          acc = acc.concat(fresh);
-        } catch (err) {
-          if (!silent) console.error('Failed to load new tips:', err);
-        }
-      }
-
-      const merged = dedupAndSortTips(acc);
-      setTips(merged);
-
-      setTipCacheForJar(jar, {
-        lastBlock: latest.toString(),
-        tips: serializeTips(merged),
-      });
-    } catch (e) {
-      if (!silent) console.error('Failed to load incremental tips:', e);
-    } finally {
-      if (!silent) setLoadingFeed(false);
-      tipsLoadingLock = false;
-    }
-  }
-
-  /** ===== Tips loader: deep scan (all-time, в фоне) ===== */
-  async function loadTipsDeep(silent = false) {
-    if (!publicClient) return;
-    if (!isPageVisible()) return;
-    if (tipsLoadingLock) return;
-
-    // если уже есть кэш — глубокий скан не нужен
-    const existing = getTipCacheForJar(jar);
-    if (existing) {
-      // но можем догрузить последние блоки
-      return loadTipsIncremental(silent);
-    }
-
-    tipsLoadingLock = true;
-    if (!silent) setLoadingFeed(true);
-
-    try {
-      const latest = await withRetry(() => publicClient.getBlockNumber());
-      let to = latest;
-      let window = 10_000n; // окно побольше
-      let chunks = 0;
-      const maxChunks = 200; // до ~2M блоков
-      const deepAcc: TipItem[] = [];
-
-      let backoffMs = 600;
-
-      while (to >= 0n && chunks < maxChunks) {
-        const from = to > window ? to - window : 0n;
-
-        try {
-          const logs = await publicClient.getLogs({
-            address: jar,
-            fromBlock: from,
-            toBlock: to,
-            event: TIPPED_EVENT,
-          });
-
-          for (const lg of logs) {
-            try {
-              const ev = lg as unknown as {
-                args?: {
-                  from?: `0x${string}`;
-                  amount?: bigint;
-                  message?: string;
-                };
-                transactionHash?: Hex;
-                blockNumber?: bigint;
-              };
-
-              const args = ev.args || {};
-              const fromAddr = args.from as `0x${string}` | undefined;
-              const amountBI = args.amount as bigint | undefined;
-
-              if (!fromAddr || amountBI === undefined) continue;
-
-              const msg = sanitizeMessage(args.message ?? '');
-
-              deepAcc.push({
-                txHash: ev.transactionHash || ('0x' as Hex),
-                from: fromAddr,
-                amountWei: amountBI,
-                message: msg,
-                blockNumber: ev.blockNumber ?? 0n,
-              });
-            } catch {
-              // skip
-            }
-          }
-
-          backoffMs = 600;
-        } catch (err: any) {
-          const msg = String(err?.message || '');
-          const code = Number(err?.code);
-
-          if (
-            msg.includes('over rate limit') ||
-            code === -32016 ||
-            code === 429
-          ) {
-            window = window / 2n || 1n;
-            await sleep(backoffMs);
-            backoffMs = Math.min(backoffMs * 2, 5000);
-            continue;
-          }
-
-          if (
-            msg.includes('no backend is currently healthy') ||
-            code === -32011 ||
-            /timeout/i.test(msg)
-          ) {
-            window = window / 2n || 1n;
-            await sleep(backoffMs);
-            backoffMs = Math.min(backoffMs * 2, 5000);
-            continue;
-          }
-
-          throw err;
-        }
-
-        to = from > 0n ? from - 1n : 0n;
-        chunks++;
-      }
-
-      const merged = dedupAndSortTips(deepAcc);
-      setTips(merged);
-
-      setTipCacheForJar(jar, {
-        lastBlock: latest.toString(),
-        tips: serializeTips(merged),
-      });
-    } catch (e) {
-      if (!silent) console.error('Failed to load deep tips:', e);
-    } finally {
-      if (!silent) setLoadingFeed(false);
-      tipsLoadingLock = false;
-    }
-  }
-
-  /** ===== Fast owner panel (cache + parallel) ===== */
-  async function refreshOwnerPanel(silent = false) {
-    if (!publicClient) return;
-
-    const cached = getCachedOwner(jar);
-    if (cached && !owner) {
-      setOwner(cached);
-    }
-
-    try {
-      const ownerPromise = publicClient.readContract({
-        address: jar,
-        abi: [
-          {
-            type: 'function',
-            name: 'owner',
-            inputs: [],
-            outputs: [{ type: 'address' }],
-            stateMutability: 'view',
-          },
-        ] as const,
-        functionName: 'owner',
-      }) as Promise<string>;
-
-      const balancePromise = publicClient.getBalance({ address: jar });
-
-      const [ownRes, balRes] = await Promise.allSettled([
-        ownerPromise,
-        balancePromise,
-      ]);
-
-      if (ownRes.status === 'fulfilled') {
-        const own = ownRes.value;
-        setOwner(own);
-        setOwnerCache(jar, own);
-      }
-      if (balRes.status === 'fulfilled') {
-        setJarBalance(balRes.value);
-      }
-    } catch (e) {
-      if (!silent) console.error('Owner panel refresh failed:', e);
-    }
-  }
-
-  /** ===== Jar fuse + current gas ===== */
-  async function refreshGasPanel(silent = false) {
-    if (!publicClient) return;
-
-    try {
-      const [capWei, baseWei] = await Promise.all([
-        publicClient.readContract({
-          address: jar,
-          abi: TIPJAR_ABI as any,
-          functionName: 'maxGasPriceWei',
-          args: [] as const,
-        }),
-        publicClient.getGasPrice(),
-      ]);
-
-      setJarCapGwei(Number(formatGwei(capWei as bigint)));
-      setNetGasGwei(Number(formatGwei(baseWei)));
-    } catch (e) {
-      if (!silent) console.error('Gas panel refresh failed:', e);
-    }
-  }
-
-  /** ===== Main bootstrap effect: tips + owner + gas + intervals ===== */
-  useEffect(() => {
-    if (!publicClient) return;
-
-    let alive = true;
-    let idOwner: ReturnType<typeof setInterval> | null = null;
-    let idGas: ReturnType<typeof setInterval> | null = null;
-    let idFeed: ReturnType<typeof setInterval> | null = null;
-
-    const run = async () => {
-      try {
-        // сразу пробуем вытащить кэш tips и показать мгновенно
-        try {
-          const cached = getTipCacheForJar(jar);
-          if (cached) {
-            const des = deserializeTips(cached.tips);
-            setTips(
-              des.sort((a, b) => Number(b.blockNumber - a.blockNumber)),
-            );
-            // поверх кэша просто дотягиваем новые
-            void loadTipsIncremental(true);
-          } else {
-            // нет кэша → быстрый слой, потом глубокий в фоне
-            await loadTipsShallow(false);
-            void loadTipsDeep(true);
-          }
-        } catch {
-          await loadTipsShallow(false);
-          void loadTipsDeep(true);
-        }
-
-        void refreshOwnerPanel(true);
-        void refreshGasPanel(true);
-      } catch {
-        // nothing
-      }
-
-      // периодические обновления
-      idOwner = setInterval(() => {
-        if (!alive || !isPageVisible()) return;
-        void refreshOwnerPanel(true);
-      }, 20_000);
-
-      idGas = setInterval(() => {
-        if (!alive || !isPageVisible()) return;
-        void refreshGasPanel(true);
-      }, 30_000);
-
-      idFeed = setInterval(() => {
-        if (!alive || !isPageVisible()) return;
-        void loadTipsIncremental(true);
-      }, 45_000);
-    };
-
-    void run();
-
-    const onVisibility = () => {
-      if (isPageVisible()) {
-        void refreshOwnerPanel(true);
-        void refreshGasPanel(true);
-        void loadTipsIncremental(true);
-      }
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-
-    return () => {
-      alive = false;
-      if (idOwner) clearInterval(idOwner);
-      if (idGas) clearInterval(idGas);
-      if (idFeed) clearInterval(idFeed);
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [publicClient, jar]);
-
-  /** ===== resolve names (ens/basename) ===== */
   useEffect(() => {
     const lower = (m: Record<string, string | null>) =>
       Object.fromEntries(
@@ -896,13 +202,16 @@ export default function JarPublicPage() {
     })();
   }, [tips, nameMap]);
 
-  /** ===== Copy helpers ===== */
+  /* ========================= Copy helpers ========================= */
+
   const onCopy = async () => {
     try {
       await navigator.clipboard.writeText(jar);
       setCopied(true);
       setTimeout(() => setCopied(false), 1000);
-    } catch {}
+    } catch {
+      // ignore
+    }
   };
 
   const publicLink = useMemo(() => {
@@ -911,16 +220,36 @@ export default function JarPublicPage() {
     return `${origin}/jar/${jar}`;
   }, [jar]);
 
-  /** ===== Refresh button handler (UX фидбек) ===== */
-  const handleRefreshClick = async () => {
+  /* ========================= Withdraw handler ========================= */
+
+  const onWithdrawClick = async () => {
+    if (!canWithdraw) return;
+    setWithdrawError(null);
+    try {
+      setWithdrawing(true);
+      const res = await withdrawFromJar(jar);
+      if (!res.success) {
+        setWithdrawError(res.error || 'Failed to withdraw funds.');
+      } else {
+        await refreshOwner(true);
+      }
+    } catch (e: any) {
+      setWithdrawError(e?.message || 'Failed to withdraw funds.');
+    } finally {
+      setWithdrawing(false);
+    }
+  };
+
+  /* ========================= Refresh tips button handler ========================= */
+
+  const onRefreshClick = async () => {
     if (loadingFeed) return;
-    setJustRefreshed(false);
-    await loadTipsIncremental(false);
-    setJustRefreshed(true);
-    setTimeout(() => setJustRefreshed(false), 900);
+    await handleRefreshClick();
   };
 
   if (!mounted) return null;
+
+  /* ========================= Render ========================= */
 
   return (
     <main className="relative z-0 min-h-screen px-4 py-8 sm:px-6 lg:px-8">
@@ -940,7 +269,7 @@ export default function JarPublicPage() {
         </div>
 
         {/* Network + Jar address */}
-        <p className="mb-3 text-sm text-neutral-400">
+        <p className="mb-2 text-sm text-neutral-400">
           Network: 8453 (Base Mainnet)
           <br />
           Jar{' '}
@@ -953,15 +282,26 @@ export default function JarPublicPage() {
           <button
             type="button"
             onClick={onCopy}
-            className="ml-2 rounded-md bg.white/10 px-2 py-0.5 text-xs hover:bg-white/15"
+            className="ml-2 rounded-md bg-white/10 px-2 py-0.5 text-xs hover:bg-white/15"
           >
             {copied ? 'Copied ✓' : 'Copy'}
           </button>
         </p>
 
+        {/* Tip card button (модалка) */}
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={() => setShowTipCard(true)}
+            className="inline-flex items-center rounded-md bg-white/10 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-white/20"
+          >
+            Open tip card
+          </button>
+        </div>
+
         {/* Fuse / gas state strip */}
         {jarCapGwei !== null && (
-          <section className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-neutral-200 backdrop-blur-sm sm:text-sm">
+          <section className="mb-6 rounded-2xl border border-white/10 bg.white/5 p-4 text-xs text-neutral-200 backdrop-blur-sm sm:text-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="text-neutral-300">
@@ -995,7 +335,7 @@ export default function JarPublicPage() {
           </section>
         )}
 
-        {/* === OWNER PANEL (visible only to owner) === */}
+        {/* === OWNER PANEL (only visible to owner) === */}
         {canWithdraw && (
           <section className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm">
             <div className="mb-2 flex items-center gap-2">
@@ -1025,7 +365,7 @@ export default function JarPublicPage() {
               <div className="ml-auto flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => refreshOwnerPanel()}
+                  onClick={() => refreshOwner()}
                   className="rounded-md bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15"
                   disabled={withdrawing}
                 >
@@ -1033,27 +373,7 @@ export default function JarPublicPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={async () => {
-                    if (!canWithdraw) return;
-                    setWithdrawError(null);
-                    try {
-                      setWithdrawing(true);
-                      const res = await withdrawFromJar(jar);
-                      if (!res.success) {
-                        setWithdrawError(
-                          res.error || 'Failed to withdraw funds.',
-                        );
-                      } else {
-                        await refreshOwnerPanel(true);
-                      }
-                    } catch (e: any) {
-                      setWithdrawError(
-                        e?.message || 'Failed to withdraw funds.',
-                      );
-                    } finally {
-                      setWithdrawing(false);
-                    }
-                  }}
+                  onClick={onWithdrawClick}
                   disabled={withdrawing}
                   aria-busy={withdrawing}
                   className="rounded-xl bg-[#0052FF] px-4 py-2 font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-50 hover:opacity-90 active:opacity-80"
@@ -1159,7 +479,7 @@ export default function JarPublicPage() {
             <h3 className="text-lg font-semibold">Recent tips</h3>
             <button
               type="button"
-              onClick={handleRefreshClick}
+              onClick={onRefreshClick}
               disabled={loadingFeed}
               className="rounded-md bg-white/10 px-3 py-1.5 text-sm transition-colors hover:bg-white/15 disabled:opacity-60"
             >
@@ -1177,9 +497,8 @@ export default function JarPublicPage() {
             </div>
           ) : (
             <ul className="divide-y divide-white/10">
-              {tips.map((t) => {
-                const name =
-                  nameMap[t.from.toLowerCase()] || null;
+              {tips.map((t: TipItem) => {
+                const name = nameMap[t.from.toLowerCase()] || null;
                 return (
                   <li key={`${t.txHash}`} className="py-3">
                     <div className="flex items-start gap-3">
@@ -1204,8 +523,7 @@ export default function JarPublicPage() {
                               <span className="rounded bg-white/5 px-1.5 py-0.5">
                                 {displayName(t.from)}
                               </span>
-                              {' · '}Block #
-                              {t.blockNumber.toString()}
+                              {' · '}Block #{t.blockNumber.toString()}
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
@@ -1242,6 +560,13 @@ export default function JarPublicPage() {
         jarAddress={jar}
         shareLink={publicLink}
       />
+
+      {/* Tip card modal */}
+      {showTipCard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+          <TipCard address={jar} onClose={() => setShowTipCard(false)} />
+        </div>
+      )}
     </main>
   );
 }
