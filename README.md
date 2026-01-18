@@ -1,4 +1,4 @@
-```markdown
+```
 # Gas-Fused Tip Jar
 
 A tip jar on Base that respects your gas limits.
