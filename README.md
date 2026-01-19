@@ -56,7 +56,7 @@ Using `call` instead of `transfer` to handle smart-contract wallets (Gnosis Safe
 
 | Contract | Address |
 | --- | --- |
-| **Factory (Base)** | [`0x7CdA207B39F7648AABD5DF98c50f9AeA5f861e38`](https://www.google.com/search?q=https://basescan.org/address/0x7CdA207B39F7648AABD5DF98c50f9AeA5f861e38) |
+| **Factory (Base)** | [`0x7CdA207B39F7648AABD5DF98c50f9AeA5f861e38`](https://basescan.org/address/0x7CdA207B39F7648AABD5DF98c50f9AeA5f861e38) |
 
 ## Run Locally
 
