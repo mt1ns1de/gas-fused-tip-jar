@@ -73,7 +73,7 @@ export default function TipCard({ address, onClose }: TipCardProps) {
       <div className="flex justify-center">
         <div className="rounded-xl border border-white/10 bg-black/20 p-4">
           {publicUrl ? (
-            <QrCode value={publicUrl} size={180} />
+            <QrCode value={publicUrl} />
           ) : (
             <div className="flex h-[180px] w-[180px] items-center justify-center text-xs text-neutral-500">
               Preparing…
