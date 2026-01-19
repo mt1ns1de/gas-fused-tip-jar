@@ -1,4 +1,3 @@
-```
 # Gas-Fused Tip Jar
 
 A tip jar on Base that respects your gas limits.
@@ -20,7 +19,7 @@ The supporter keeps their ETH. You don't get overpaid tips.
 ### 1. The Fuse (On-chain Logic)
 Instead of an Oracle, I check the raw `tx.gasprice` opcode. It's efficient and impossible to spoof.
 
-```
+```solidity
 // contracts/src/TipJar.sol
 
 modifier withinGasCap() {
@@ -28,8 +27,6 @@ modifier withinGasCap() {
     if (tx.gasprice > maxGasPriceWei) revert GasPriceTooHigh();
     _;
 }
-
-```
 
 ### 2. No Proxies (The "Anti-Pattern")
 
