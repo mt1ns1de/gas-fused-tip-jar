@@ -1,47 +1,79 @@
 # Gas-Fused Tip Jar
 
-Tip jar on **Base** with a built-in gas fuse.
-
-You choose the maximum gas price a supporter is allowed to pay.  
-If the network goes above that level, the tip reverts and their ETH stays with them.
+A tip jar on Base that respects your gas limits.
+**No backend. No bots. 100% on-chain.**
 
 ---
+
+## Why?
+
+Most "gas protection" tools rely on off-chain relayers or Python scripts monitoring the mempool.
+**If the server dies, the protection dies.**
+
+I wanted something unstoppable. This project enforces the gas cap logic directly inside the EVM. If `tx.gasprice` exceeds the cap you set, the transaction reverts immediately.
+
+The supporter keeps their ETH. You don't get overpaid tips.
 
 ## How it works
 
-- Deploy a jar and set a **gas cap** (max gas price in wei).
-- Supporters send tips directly to the jar on Base.
-- If current gas ≤ cap → the tip is processed.
-- If current gas > cap → the transaction reverts with a clear error.
+### 1. The Fuse (On-chain Logic)
+Instead of an Oracle, I check the raw `tx.gasprice` opcode. It's efficient and impossible to spoof.
 
-No offchain services. The fuse logic lives fully onchain in the jar contract.
+```solidity
+// contracts/src/TipJar.sol
+
+modifier withinGasCap() {
+    // If network is busy, fail fast.
+    if (tx.gasprice > maxGasPriceWei) revert GasPriceTooHigh();
+    _;
+}
+
+```
+
+### 2. No Proxies (The "Anti-Pattern")
+
+You'll notice `TipJarFactory.sol` creates jars using `new TipJar(...)` instead of Clones (EIP-1167).
+
+**Why pay ~150k gas instead of 45k?**
+
+* **Simplicity:** No initialization logic, no delegatecall context confusion.
+* **Safety:** Each jar is a sovereign contract.
+* **Reality:** On Base (L2), the cost difference is negligible ($0.01 vs $0.05). I prefer code that is easy to read and impossible to break over premature optimization.
+
+### 3. Withdrawals
+
+Using `call` instead of `transfer` to handle smart-contract wallets (Gnosis Safe) correctly and prevent gas griefing.
 
 ---
 
-## Why it’s useful
+## Tech Stack
 
-- Protects supporters from tipping during unexpected gas spikes.
-- Lets creators choose how “aggressive” or “conservative” their jars are.
-- Easy to share: send your jar URL and start receiving tips.
+* **Contracts:** Solidity 0.8.20, Foundry
+* **Frontend:** Next.js 16, Wagmi v2, Viem
+* **Network:** Base Mainnet
 
----
+## Deployments
 
-## Contracts
+| Contract | Address |
+| --- | --- |
+| **Factory (Base)** | [`0x7CdA207B39F7648AABD5DF98c50f9AeA5f861e38`](https://basescan.org/address/0x7CdA207B39F7648AABD5DF98c50f9AeA5f861e38) |
 
-**Base Mainnet**
+## Run Locally
 
-- TipJarFactory: `0x16db7bf0afabf9ac9571ef4dec84f142a579d2a6`
+```bash
+# 1. Install
+git clone [https://github.com/mt1ns1de/gas-fused-tip-jar.git](https://github.com/mt1ns1de/gas-fused-tip-jar.git)
+cd gas-fused-tip-jar
+npm install
 
-**Base Sepolia**
+# 2. Run Frontend
+npm run dev
 
-- TipJarFactory: `0x4432b13DABF32b67Bd41472e1350d7E083be6B01`
+# 3. Run Tests
+forge test -vv
 
-Every jar is a minimal proxy created by the factory.
+```
 
----
+```
 
-## Stack
-
-- Next.js 16 (App Router, TypeScript)
-- wagmi v2 + viem
-- Tailwind CSS, Base-inspired UI
+```
