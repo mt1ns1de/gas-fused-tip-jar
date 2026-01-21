@@ -7,18 +7,8 @@ import { base } from "viem/chains";
 import { getAccount, switchChain, getPublicClient } from "wagmi/actions";
 import { config } from "@/lib/wagmi";
 import { TIPJAR_ABI } from "@/lib/abiTipJar";
-
-// Factory ABI from .env (single-line JSON)
-const FACTORY_ABI: any = (() => {
-  try {
-    return JSON.parse(process.env.NEXT_PUBLIC_FACTORY_ABI ?? "[]");
-  } catch {
-    return [];
-  }
-})();
-
-const FACTORY_ADDRESS = process.env
-  .NEXT_PUBLIC_FACTORY_BASE_MAINNET as `0x${string}`;
+// 🔥 Импортируем надежные данные из contracts.ts
+import { FACTORY_ABI, FACTORY_ADDRESSES } from "@/lib/contracts";
 
 /** map raw errors → concise UX texts (EN) + сырой текст для дебага */
 function mapError(e: any): string {
@@ -47,7 +37,6 @@ function mapError(e: any): string {
   if (msg.includes("no backend is currently healthy") || msg.includes("timeout"))
     return "Network provider is unstable. Please try again shortly.";
 
-  // на крайний случай отдаём сырой текст, чтобы видеть реальную причину
   return raw || "The operation failed. Please try again.";
 }
 
@@ -58,6 +47,7 @@ async function ensureBaseOrFail(): Promise<{ address: `0x${string}` }> {
   }
   if (acc0.chainId !== base.id) {
     await switchChain(config, { chainId: base.id });
+    // small delay to let wagmi state sync
     for (let i = 0; i < 6; i++) {
       await new Promise((r) => setTimeout(r, 250));
       const acc = getAccount(config);
@@ -75,16 +65,21 @@ async function ensureBaseOrFail(): Promise<{ address: `0x${string}` }> {
 /** Create Jar via factory (simulate first) */
 export async function createJar(params: { maxGasPriceWei: bigint }) {
   try {
-    if (!FACTORY_ADDRESS || !FACTORY_ABI?.length) {
-      return { success: false, error: "Factory config is missing" } as const;
+    // 🔥 Берем адрес из нашего конфига с фоллбеком
+    const factoryAddress = FACTORY_ADDRESSES[base.id];
+
+    if (!factoryAddress) {
+      return { success: false, error: "Factory address configuration is missing." } as const;
     }
 
     const { address: account } = await ensureBaseOrFail();
 
     const publicClient = getPublicClient(config);
+    
+    // Симуляция транзакции
     const sim = await publicClient.simulateContract({
-      abi: FACTORY_ABI,
-      address: FACTORY_ADDRESS,
+      abi: FACTORY_ABI,      // Используем ABI из кода, а не из ENV
+      address: factoryAddress,
       functionName: "createJar",
       args: [params.maxGasPriceWei],
       chain: base,
@@ -106,11 +101,13 @@ export async function createJar(params: { maxGasPriceWei: bigint }) {
               ] as [] | [`0x${string}`, ...`0x${string}`[]])
             : ([] as []);
         const data = ((log as any).data ?? "0x") as `0x${string}`;
+        
         const parsed = decodeEventLog({
           abi: FACTORY_ABI,
           data,
           topics,
         }) as { eventName: string; args: any };
+
         if (parsed.eventName === "JarCreated") {
           const args = parsed.args || {};
           if (args.jar) {
@@ -119,7 +116,7 @@ export async function createJar(params: { maxGasPriceWei: bigint }) {
           }
         }
       } catch {
-        // ignore malformed logs
+        // ignore unrelated logs
       }
     }
 
