@@ -107,35 +107,6 @@ export default function JarVisual({
             opacity={0.9}
           />
         </g>
-
-        {/* Small Base glyph circle */}
-        <g>
-          <circle
-            cx={width * 0.5}
-            cy={height * 0.42}
-            r={width * 0.16}
-            fill="#020617"
-            stroke="#1d4ed8"
-            strokeWidth={1.2}
-            opacity={0.95}
-          />
-          <circle
-            cx={width * 0.5}
-            cy={height * 0.42}
-            r={width * 0.08}
-            fill="#0f172a"
-          />
-          <text
-            x={width * 0.5}
-            y={height * 0.43}
-            textAnchor="middle"
-            fontSize={width * 0.09}
-            fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif"
-            fill="#e5e7eb"
-          >
-            B
-          </text>
-        </g>
       </svg>
     </div>
   );
