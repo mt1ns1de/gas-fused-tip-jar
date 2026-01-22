@@ -6,11 +6,13 @@ import { useParams } from 'next/navigation';
 import { useAccount, usePublicClient } from 'wagmi';
 import CursorAura from '@/components/CursorAura';
 import WalletButton from '@/components/WalletButton';
-import { formatEther, Hex, parseEther } from 'viem';
+import { formatEther, parseEther } from 'viem';
 import { getPrimaryName } from '@/lib/identity';
 import Avatar from '@/components/Avatar';
 import Slogan from '@/components/Slogan';
 import TipSuccessModal from '@/components/TipSuccessModal';
+// 🔥 Добавили импорт модалки вывода
+import WithdrawSuccessModal from '@/components/WithdrawSuccessModal';
 import { withdrawFromJar } from '@/actions/createJar.client';
 
 import { useJarTips, type TipItem } from '@/hooks/useJarTips';
@@ -45,9 +47,14 @@ export default function JarPublicPage() {
   const [cooldown, setCooldown] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // success modal
+  // success modal (TIP)
   const [showSuccess, setShowSuccess] = useState(false);
-  const [lastTx, setLastTx] = useState<`0x${string}` | string | null>(null);
+  const [lastTx, setLastTx] = useState<string | null>(null);
+
+  // success modal (WITHDRAW) 🔥
+  const [showWithdrawSuccess, setShowWithdrawSuccess] = useState(false);
+  const [withdrawTx, setWithdrawTx] = useState<string | undefined>(undefined);
+  const [withdrawnAmount, setWithdrawnAmount] = useState<string>('0');
 
   // tip card modal
   const [showTipCard, setShowTipCard] = useState(false);
@@ -225,12 +232,22 @@ export default function JarPublicPage() {
   const onWithdrawClick = async () => {
     if (!canWithdraw) return;
     setWithdrawError(null);
+
+    // Запоминаем баланс ДО транзакции (чтобы показать в модалке)
+    const amountToShow = jarBalance ? Number(formatEther(jarBalance)).toFixed(6) : '0';
+
     try {
       setWithdrawing(true);
       const res = await withdrawFromJar(jar);
+      
       if (!res.success) {
         setWithdrawError(res.error || 'Failed to withdraw funds.');
       } else {
+        // 🔥 УСПЕХ! Показываем модалку
+        setWithdrawnAmount(amountToShow);
+        setWithdrawTx(res.txHash);
+        setShowWithdrawSuccess(true);
+
         await refreshOwner(true);
       }
     } catch (e: any) {
@@ -301,7 +318,7 @@ export default function JarPublicPage() {
 
         {/* Fuse / gas state strip */}
         {jarCapGwei !== null && (
-          <section className="mb-6 rounded-2xl border border-white/10 bg.white/5 p-4 text-xs text-neutral-200 backdrop-blur-sm sm:text-sm">
+          <section className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-neutral-200 backdrop-blur-sm sm:text-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="text-neutral-300">
@@ -551,7 +568,7 @@ export default function JarPublicPage() {
         </div>
       </div>
 
-      {/* Success modal */}
+      {/* Success modal (TIP) */}
       <TipSuccessModal
         open={showSuccess}
         onClose={() => setShowSuccess(false)}
@@ -559,6 +576,14 @@ export default function JarPublicPage() {
         txHash={lastTx || undefined}
         jarAddress={jar}
         shareLink={publicLink}
+      />
+
+      {/* 🔥 Success modal (WITHDRAW) */}
+      <WithdrawSuccessModal 
+        open={showWithdrawSuccess}
+        onClose={() => setShowWithdrawSuccess(false)}
+        amountEth={withdrawnAmount}
+        txHash={withdrawTx}
       />
 
       {/* Tip card modal */}

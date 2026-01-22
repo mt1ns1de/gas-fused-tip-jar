@@ -431,6 +431,7 @@ export default function CreateJar({ onCreated, onGasSnapshotChange }: Props) {
             onClose={() => setShowCelebration(false)}
             title="Your Jar is live! 💙"
             subtitle="Share your link and start receiving tips on Base."
+            txHash={txHash || undefined}
             link={
               publicPage
                 ? typeof window !== 'undefined'

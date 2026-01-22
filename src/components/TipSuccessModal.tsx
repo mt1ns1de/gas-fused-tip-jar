@@ -5,19 +5,12 @@ import React, { useState } from 'react';
 type Props = {
   open: boolean;
   onClose: () => void;
-  amountEth: string; // as string from state
+  amountEth: string;
   txHash?: string;
   jarAddress: string;
   shareLink?: string;
 };
 
-/**
- * TipSuccessModal
- *
- * Shown after a successful tip:
- * - displays amount, tx link and jar address
- * - optional share link with copy button
- */
 export default function TipSuccessModal({
   open,
   onClose,
@@ -30,12 +23,8 @@ export default function TipSuccessModal({
 
   if (!open) return null;
 
-  const explorerTx = txHash
-    ? `https://basescan.org/tx/${txHash}`
-    : undefined;
-  const explorerJar = jarAddress
-    ? `https://basescan.org/address/${jarAddress}`
-    : undefined;
+  const explorerTx = txHash ? `https://basescan.org/tx/${txHash}` : undefined;
+  const explorerJar = jarAddress ? `https://basescan.org/address/${jarAddress}` : undefined;
 
   const onCopy = async () => {
     if (!shareLink) return;
@@ -43,105 +32,64 @@ export default function TipSuccessModal({
       await navigator.clipboard.writeText(shareLink);
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
-    } catch {
-      // ignore clipboard errors
-    }
+    } catch { /* ignore */ }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <div className="relative w-full max-w-md rounded-2xl border border-white/10 bg-black/90 p-5 text-sm text-neutral-100 shadow-2xl">
-        {/* Close */}
+      <div className="relative w-full max-w-md rounded-2xl border border-white/10 bg-black/90 p-6 text-sm text-neutral-100 shadow-2xl">
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-3 top-3 rounded-full bg-white/10 px-2 py-1 text-xs text-neutral-200 hover:bg-white/20"
+          className="absolute right-4 top-4 rounded-full bg-white/5 p-1.5 text-neutral-400 hover:bg-white/10 hover:text-white transition-colors"
         >
-          ×
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M10.5 3.5L3.5 10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M3.5 3.5L10.5 10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
         </button>
 
-        <div className="mb-3 text-center">
-          <h2 className="text-lg font-semibold text-white">
-            Thanks for your tip! 💙
-          </h2>
-          <p className="mt-1 text-xs text-neutral-400">
-            Your support just went on-chain on Base.
-          </p>
+        <div className="mb-6 text-center">
+          <h2 className="text-xl font-bold text-white">Thanks for your tip! 💙</h2>
+          <p className="mt-1 text-xs text-neutral-400">Your support just went on-chain on Base.</p>
         </div>
 
-        <div className="space-y-4">
-          {/* Amount */}
-          <div className="rounded-xl border border-white/10 bg-black/60 px-4 py-3 text-center">
-            <div className="text-xs uppercase tracking-wide text-neutral-400">
-              Amount
-            </div>
-            <div className="text-xl font-semibold text-white">
-              {amountEth || '0'} ETH
-            </div>
+        <div className="space-y-5">
+          {/* Amount Box */}
+          <div className="rounded-xl border border-white/10 bg-white/5 py-4 text-center">
+            <div className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">Amount sent</div>
+            <div className="mt-1 text-2xl font-bold text-white tracking-tight">{amountEth || '0'} ETH</div>
           </div>
 
-          {/* Links */}
-          <div className="space-y-2 text-xs">
+          {/* Links Row */}
+          <div className="flex gap-3">
             {explorerTx && (
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-neutral-400">Transaction</span>
-                <a
-                  href={explorerTx}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-md bg-white/10 px-3 py-1 text-xs text-neutral-50 hover:bg-white/20"
-                >
-                  View on Basescan
-                </a>
-              </div>
+              <a href={explorerTx} target="_blank" rel="noreferrer" className="flex-1 rounded-lg bg-white/5 px-3 py-2.5 text-center text-xs font-medium text-neutral-300 hover:bg-white/10 transition-colors border border-white/5">
+                View Transaction ↗
+              </a>
             )}
-
             {explorerJar && (
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-neutral-400">Jar contract</span>
-                <a
-                  href={explorerJar}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-md bg-white/10 px-3 py-1 text-xs text-neutral-50 hover:bg-white/20"
-                >
-                  View jar
-                </a>
-              </div>
+              <a href={explorerJar} target="_blank" rel="noreferrer" className="flex-1 rounded-lg bg-white/5 px-3 py-2.5 text-center text-xs font-medium text-neutral-300 hover:bg-white/10 transition-colors border border-white/5">
+                View Contract ↗
+              </a>
             )}
           </div>
 
-          {/* Share link */}
+          {/* Share Input Group */}
           {shareLink && (
-            <div className="space-y-1">
-              <div className="text-[11px] uppercase tracking-wide text-neutral-400">
-                Share this jar
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 rounded-lg border border-white/10 bg-black/60 px-3 py-2 text-xs text-neutral-200">
-                  <span
-                    className="block max-w-full truncate"
-                    title={shareLink}
-                  >
-                    {shareLink}
-                  </span>
+            <div>
+              <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-neutral-500">Share this jar</div>
+              <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/50 p-1.5 transition-colors focus-within:border-white/20 hover:border-white/20">
+                <div className="flex-1 truncate px-2 text-xs font-mono text-neutral-300 select-all">
+                  {shareLink}
                 </div>
                 <button
                   type="button"
                   onClick={onCopy}
-                  className="shrink-0 rounded-lg bg-[#0052FF] px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90 active:opacity-80"
+                  className="shrink-0 rounded-lg bg-[#0052FF] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#004ad1] active:scale-95"
                 >
-                  {copied ? 'Copied ✓' : 'Copy'}
+                  {copied ? 'Copied' : 'Copy'}
                 </button>
               </div>
             </div>
           )}
-
-          <div className="pt-2 text-[11px] text-neutral-500">
-            You can keep tipping this jar or share the link with friends,
-            followers and collaborators who want to support this address on
-            Base.
-          </div>
         </div>
       </div>
     </div>

@@ -6,20 +6,12 @@ import { formatEther } from 'viem';
 
 import QrCode from '@/components/QrCode';
 import { withdrawFromJar } from '@/actions/createJar.client';
+import WithdrawSuccessModal from '@/components/WithdrawSuccessModal';
 
 type Props = {
   jarAddress: `0x${string}` | string;
 };
 
-/**
- * YourJar
- *
- * Shows summary for a single jar:
- * - owner
- * - current balance
- * - withdraw button if viewer is owner
- * - QR toggle for sharing
- */
 export default function YourJar({ jarAddress }: Props) {
   const publicClient = usePublicClient();
   const { address } = useAccount();
@@ -29,6 +21,11 @@ export default function YourJar({ jarAddress }: Props) {
   const [showQR, setShowQR] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // State для модалки успеха
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [withdrawTx, setWithdrawTx] = useState<string | undefined>(undefined);
+  const [withdrawnAmount, setWithdrawnAmount] = useState<string>('0');
 
   const addr = jarAddress as `0x${string}`;
 
@@ -101,21 +98,30 @@ export default function YourJar({ jarAddress }: Props) {
   const onWithdraw = async () => {
     if (!isOwner || pending) return;
     setError(null);
+    
+    // Запоминаем сумму ДО вывода, чтобы показать в модалке
+    const amountToShow = balanceLabel.replace(' ETH', ''); 
+
     try {
       setPending(true);
       const res = await withdrawFromJar(addr);
+      
       if (!res.success) {
         setError(res.error || 'Failed to withdraw funds.');
         return;
       }
-      // refresh balance after successful withdraw
+
+      // Успех -> показываем модалку
+      setWithdrawnAmount(amountToShow);
+      setWithdrawTx(res.txHash);
+      setShowSuccess(true);
+
+      // обновляем баланс (попытка)
       if (publicClient) {
         try {
           const b = await publicClient.getBalance({ address: addr });
           setBalance(b);
-        } catch {
-          // ignore
-        }
+        } catch { /* ignore */ }
       }
     } catch (e: any) {
       setError(e?.message || 'Failed to withdraw funds.');
@@ -200,6 +206,14 @@ export default function YourJar({ jarAddress }: Props) {
           {error}
         </div>
       )}
+
+      {/* Модалка вывода */}
+      <WithdrawSuccessModal 
+        open={showSuccess}
+        onClose={() => setShowSuccess(false)}
+        amountEth={withdrawnAmount}
+        txHash={withdrawTx}
+      />
     </div>
   );
 }

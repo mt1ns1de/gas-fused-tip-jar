@@ -12,22 +12,26 @@ export const FACTORY_ADDRESSES: Record<number, Address | undefined> = {
   [base.id]: (env.FACTORY_BASE_MAINNET || '0x7CdA207B39F7648AABD5DF98c50f9AeA5f861e38') as Address, 
 }
 
-// ABI Фабрики (экспортируем его отсюда, чтобы использовать везде)
+// ✅ ПРАВИЛЬНЫЙ ABI (соответствует твоему TipJarFactory.sol без прокси)
 export const FACTORY_ABI = [
-  { inputs:[{internalType:'address',name:'_initialLogic',type:'address'},{internalType:'address',name:'_initialOwner',type:'address'}],stateMutability:'nonpayable',type:'constructor' },
-  { inputs:[], name:'FailedDeployment', type:'error' },
-  { inputs:[], name:'InitializationFailed', type:'error' },
-  { inputs:[{internalType:'uint256',name:'balance',type:'uint256'},{internalType:'uint256',name:'needed',type:'uint256'}], name:'InsufficientBalance', type:'error' },
-  { inputs:[], name:'InvalidImplementation', type:'error' },
-  { inputs:[{internalType:'address',name:'owner',type:'address'}], name:'OwnableInvalidOwner', type:'error' },
-  { inputs:[{internalType:'address',name:'account',type:'address'}], name:'OwnableUnauthorizedAccount', type:'error' },
-  { anonymous:false, inputs:[{indexed:false,internalType:'address',name:'newImplementation',type:'address'}], name:'ImplementationUpdated', type:'event' },
-  { anonymous:false, inputs:[{indexed:true,internalType:'address',name:'recipient',type:'address'},{indexed:false,internalType:'address',name:'jarAddress',type:'address'},{indexed:false,internalType:'uint256',name:'maxGasPriceWei',type:'uint256'}], name:'JarCreated', type:'event' },
-  { anonymous:false, inputs:[{indexed:true,internalType:'address',name:'previousOwner',type:'address'},{indexed:true,internalType:'address',name:'newOwner',type:'address'}], name:'OwnershipTransferred', type:'event' },
-  { inputs:[{internalType:'uint256',name:'_maxGasPriceWei',type:'uint256'}], name:'createJar', outputs:[{internalType:'address payable',name:'jarAddress',type:'address'}], stateMutability:'nonpayable', type:'function' },
-  { inputs:[], name:'logicImplementation', outputs:[{internalType:'address',name:'',type:'address'}], stateMutability:'view', type:'function' },
-  { inputs:[], name:'owner', outputs:[{internalType:'address',name:'',type:'address'}], stateMutability:'view', type:'function' },
-  { inputs:[], name:'renounceOwnership', outputs:[], stateMutability:'nonpayable', type:'function' },
-  { inputs:[{internalType:'address',name:'newOwner',type:'address'}], name:'transferOwnership', outputs:[], stateMutability:'nonpayable', type:'function' },
-  { inputs:[{internalType:'address',name:'_newLogic',type:'address'}], name:'updateImplementation', outputs:[], stateMutability:'nonpayable', type:'function' },
+  {
+    type: 'function',
+    name: 'createJar',
+    inputs: [
+      { name: '_maxGasPriceWei', type: 'uint256', internalType: 'uint256' }
+    ],
+    outputs: [
+      { name: 'jar', type: 'address', internalType: 'address' }
+    ],
+    stateMutability: 'nonpayable'
+  },
+  {
+    type: 'event',
+    name: 'JarCreated',
+    inputs: [
+      { name: 'owner', type: 'address', indexed: true, internalType: 'address' },
+      { name: 'jar', type: 'address', indexed: false, internalType: 'address' }
+    ],
+    anonymous: false
+  }
 ] as const
