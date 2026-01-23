@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react';
 export default function CursorAura() {
   const auraRef = useRef<HTMLDivElement | null>(null);
 
-  // Реальное, мгновенное движение свечения
+  // Real-time, instant glow movement
   useEffect(() => {
     const el = auraRef.current!;
     const onMove = (e: MouseEvent) => {
@@ -15,7 +15,7 @@ export default function CursorAura() {
     return () => window.removeEventListener('mousemove', onMove);
   }, []);
 
-  // Эффект "падающих" B — меньшие, синие, с кружением
+  // Falling 'B' effect - smaller, blue, rotating
   useEffect(() => {
     const drop = (x: number, y: number) => {
       const s = document.createElement('span');
@@ -29,9 +29,9 @@ export default function CursorAura() {
       s.style.opacity = '0.9';
       document.body.appendChild(s);
 
-      const dx = (Math.random() - 0.5) * 80; // случайное отклонение по X
-      const dy = 60 + Math.random() * 40; // падение вниз
-      const rot = (Math.random() - 0.5) * 720; // вращение
+      const dx = (Math.random() - 0.5) * 80; // random X deviation
+      const dy = 60 + Math.random() * 40; // fall down
+      const rot = (Math.random() - 0.5) * 720; // rotation
 
       s.animate(
         [
