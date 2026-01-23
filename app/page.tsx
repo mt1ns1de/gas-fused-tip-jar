@@ -15,7 +15,7 @@ import YourJarsList from '@/components/YourJarsList';
 import FuseTour from '@/components/FuseTour';
 import { normalizeJars, type JarRow } from '@/lib/normalizeJars';
 
-/* ========= хелпер для client-only ========= */
+/* ========= Client-only helper ========= */
 
 function useMounted() {
   const [m, setM] = useState(false);
@@ -23,7 +23,7 @@ function useMounted() {
   return m;
 }
 
-/* ========= локальные статы по кошельку (для lastAddress) ========= */
+/* ========= Local stats by wallet (for lastAddress) ========= */
 
 type StoredJar = {
   address: string;
@@ -88,7 +88,7 @@ function recordJarForWallet(wallet: string | null | undefined, jarAddress: strin
     createdAt: new Date().toISOString(),
   };
 
-  // новая банка в начало, убираем дубликаты, ограничиваем список
+  // New jar to top, remove duplicates, limit list
   list = [entry, ...list.filter((j) => j.address.toLowerCase() !== jarAddress.toLowerCase())];
   list = list.slice(0, 50);
 
@@ -96,14 +96,14 @@ function recordJarForWallet(wallet: string | null | undefined, jarAddress: strin
   window.localStorage.setItem('lastJarAddress', jarAddress);
 }
 
-/* ========= тип для снапшота газа от CreateJar ========= */
+/* ========= Gas snapshot type from CreateJar ========= */
 
 type GasSnapshot = {
   currentGasGwei: number | null;
   capGasGwei: number | null;
 };
 
-/* ========= описание события JarCreated ========= */
+/* ========= JarCreated event description ========= */
 
 const JAR_CREATED_EVENT = {
   type: 'event',
@@ -206,7 +206,7 @@ export default function Page() {
   const router = useRouter();
   const publicClient = usePublicClient();
 
-  /* ===== Open-a-jar ===== */
+  /* ===== Open-a-jar Logic ===== */
 
   const [openInput, setOpenInput] = useState('');
   const [validating, setValidating] = useState(false);
@@ -218,7 +218,7 @@ export default function Page() {
   const [stats, setStats] = useState<JarStats>(() => emptyStats());
   const [lastUpdate, setLastUpdate] = useState('just now');
 
-  /* ===== Fuse gas snapshot от CreateJar ===== */
+  /* ===== Fuse gas snapshot from CreateJar ===== */
 
   const [gasSnapshot, setGasSnapshot] = useState<GasSnapshot>({
     currentGasGwei: null,
@@ -229,7 +229,7 @@ export default function Page() {
 
   const [tipIndex, setTipIndex] = useState(0);
 
-  /* ===== Банки из API для корректного счётчика ===== */
+  /* ===== Jars from API for correct counter ===== */
 
   const [jarRows, setJarRows] = useState<JarRow[]>([]);
 
@@ -266,14 +266,14 @@ export default function Page() {
 
   const normalizedJars = useMemo(() => normalizeJars(jarRows), [jarRows]);
 
-  /* ===== загрузка локальных статов при маунте/смене кошелька ===== */
+  /* ===== Load local stats on mount/wallet change ===== */
 
   useEffect(() => {
     if (!mounted) return;
     setStats(readJarStats(address));
   }, [mounted, address]);
 
-  /* ===== таймер для lastUpdate ===== */
+  /* ===== Timer for lastUpdate ===== */
 
   useEffect(() => {
     setLastUpdate('just now');
@@ -281,13 +281,13 @@ export default function Page() {
     return () => clearInterval(id);
   }, []);
 
-  /* ===== backfill старых банок из фабрики (для local lastAddress) ===== */
+  /* ===== Backfill old jars from Factory (for local lastAddress) ===== */
 
   useEffect(() => {
     if (!mounted) return;
     if (!address) return;
     if (!publicClient) return;
-    if (stats.count > 0) return; // уже есть локальные статы
+    if (stats.count > 0) return; // Already have local stats
 
     const factory = process.env.NEXT_PUBLIC_FACTORY_BASE_MAINNET as `0x${string}` | undefined;
     if (!factory) return;
@@ -335,7 +335,7 @@ export default function Page() {
     };
   }, [mounted, address, publicClient, stats.count]);
 
-  /* ===== логика Open-a-jar ===== */
+  /* ===== Open-a-jar logic ===== */
 
   const isAddrFormatOk = useMemo(() => isAddress(openInput.trim()), [openInput]);
 
@@ -382,7 +382,7 @@ export default function Page() {
     recordJarForWallet(address, addr);
     setStats(readJarStats(address));
     setLastUpdate('just now');
-    // обновим список банок в stats из API
+    // Update jar list in stats from API
     if (address) {
       (async () => {
         try {
@@ -390,7 +390,7 @@ export default function Page() {
           const j = await r.json();
           if (r.ok && j?.ok) setJarRows(j.rows || []);
         } catch {
-          // тихо игнорируем
+          // Silently ignore
         }
       })();
     }
@@ -403,7 +403,7 @@ export default function Page() {
     router.push(`/jar/${openInput.trim()}`);
   };
 
-  /* ===== Fuse Tip: ratio + выбор текста + анимация ===== */
+  /* ===== Fuse Tip: ratio + text selection + animation ===== */
 
   const ratio = useMemo(() => {
     const cur = gasSnapshot.currentGasGwei ?? 0;
