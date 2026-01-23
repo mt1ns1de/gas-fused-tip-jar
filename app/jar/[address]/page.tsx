@@ -11,7 +11,7 @@ import { getPrimaryName } from '@/lib/identity';
 import Avatar from '@/components/Avatar';
 import Slogan from '@/components/Slogan';
 import TipSuccessModal from '@/components/TipSuccessModal';
-// 🔥 Добавили импорт модалки вывода
+// 🔥 Added withdraw modal import
 import WithdrawSuccessModal from '@/components/WithdrawSuccessModal';
 import { withdrawFromJar } from '@/actions/createJar.client';
 
@@ -233,17 +233,19 @@ export default function JarPublicPage() {
     if (!canWithdraw) return;
     setWithdrawError(null);
 
-    // Запоминаем баланс ДО транзакции (чтобы показать в модалке)
-    const amountToShow = jarBalance ? Number(formatEther(jarBalance)).toFixed(6) : '0';
+    // Capture balance BEFORE transaction (to display in modal)
+    const amountToShow = jarBalance
+      ? Number(formatEther(jarBalance)).toFixed(6)
+      : '0';
 
     try {
       setWithdrawing(true);
       const res = await withdrawFromJar(jar);
-      
+
       if (!res.success) {
         setWithdrawError(res.error || 'Failed to withdraw funds.');
       } else {
-        // 🔥 УСПЕХ! Показываем модалку
+        // 🔥 SUCCESS! Show modal
         setWithdrawnAmount(amountToShow);
         setWithdrawTx(res.txHash);
         setShowWithdrawSuccess(true);
@@ -305,7 +307,7 @@ export default function JarPublicPage() {
           </button>
         </p>
 
-        {/* Tip card button (модалка) */}
+        {/* Tip card button (modal) */}
         <div className="mb-4">
           <button
             type="button"
@@ -322,9 +324,7 @@ export default function JarPublicPage() {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="text-neutral-300">
-                  <span className="font-semibold text-white">
-                    Jar fuse:
-                  </span>{' '}
+                  <span className="font-semibold text-white">Jar fuse:</span>{' '}
                   cap {jarCapGwei.toFixed(3)} gwei
                   {netGasGwei !== null && (
                     <>
@@ -364,10 +364,7 @@ export default function JarPublicPage() {
             <div className="mb-3 flex flex-wrap items-center gap-4 text-sm">
               <div>
                 <div className="text-neutral-400">Owner</div>
-                <div
-                  className="max-w-[56ch] truncate"
-                  title={owner || '—'}
-                >
+                <div className="max-w-[56ch] truncate" title={owner || '—'}>
                   {owner || '—'}
                 </div>
               </div>
@@ -419,9 +416,7 @@ export default function JarPublicPage() {
 
         {/* Form card */}
         <section className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm">
-          <label className="mb-2 block text-sm font-medium">
-            Amount (ETH)
-          </label>
+          <label className="mb-2 block text-sm font-medium">Amount (ETH)</label>
           <div className="mb-2 flex items-center gap-2">
             <input
               className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 outline-none ring-0 focus:border-[#2563eb]"
@@ -467,11 +462,7 @@ export default function JarPublicPage() {
             aria-busy={pending}
             className="rounded-xl bg-[#0052FF] px-5 py-2.5 font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-50 hover:opacity-90 active:opacity-80"
           >
-            {pending
-              ? 'Sending…'
-              : cooldown
-              ? 'Please wait…'
-              : 'Send Tip'}
+            {pending ? 'Sending…' : cooldown ? 'Please wait…' : 'Send Tip'}
           </button>
 
           {tipError && (
@@ -579,7 +570,7 @@ export default function JarPublicPage() {
       />
 
       {/* 🔥 Success modal (WITHDRAW) */}
-      <WithdrawSuccessModal 
+      <WithdrawSuccessModal
         open={showWithdrawSuccess}
         onClose={() => setShowWithdrawSuccess(false)}
         amountEth={withdrawnAmount}
