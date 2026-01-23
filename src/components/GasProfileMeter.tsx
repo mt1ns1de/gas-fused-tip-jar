@@ -19,10 +19,10 @@ export default function GasProfileMeter({ currentGwei, capGwei }: Props) {
       return { ratio: null as number | null, badge: null, barWidth: 0 };
     }
 
-    // та же логика, что и на /jar/[address]: ratio = cap / current
+    // Same logic as in /jar/[address]: ratio = cap / current
     const r = capGwei / currentGwei;
 
-    // мэппинг ratio → ширина полоски (0..2 → 0..100%)
+    // Map ratio -> bar width (0..2 -> 0..100%)
     const normalized = Math.max(0, Math.min(r / 2, 1));
     const width = normalized * 100;
 
@@ -64,7 +64,7 @@ export default function GasProfileMeter({ currentGwei, capGwei }: Props) {
   return (
     <div className="mt-4 w-full select-none">
       <div className="relative w-full overflow-hidden rounded-2xl border border-white/10 bg-black/40 p-4 backdrop-blur-sm">
-        {/* шапка карточки — внутри бордера */}
+        {/* Card header - inside border */}
         <div className="mb-2 flex items-center justify-between gap-2">
           <div className="text-xs font-medium text-neutral-300">
             GAS PROFILE
@@ -81,7 +81,7 @@ export default function GasProfileMeter({ currentGwei, capGwei }: Props) {
           )}
         </div>
 
-        {/* числа */}
+        {/* Numbers */}
         <div className="mb-2 text-sm text-neutral-300">
           <span className="font-semibold text-white">
             Current:{' '}
@@ -93,14 +93,14 @@ export default function GasProfileMeter({ currentGwei, capGwei }: Props) {
           </span>
         </div>
 
-        {/* описание */}
+        {/* Description */}
         <div className="mb-3 text-xs text-neutral-400">
           {hasData && badge
             ? badge.description
             : 'Waiting for gas data…'}
         </div>
 
-        {/* плавная полоска */}
+        {/* Smooth bar */}
         <div className="relative h-2 w-full overflow-hidden rounded-full bg-neutral-800/60">
           <div
             className="absolute left-0 top-0 h-full bg-[#0052FF]"
