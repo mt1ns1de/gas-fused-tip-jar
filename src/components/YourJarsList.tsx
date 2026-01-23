@@ -13,7 +13,7 @@ export default function YourJarsList() {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // анти-гидрационный флаг
+  // Anti-hydration flag
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -114,7 +114,7 @@ export default function YourJarsList() {
     </ul>
   );
 
-  // до маунта всегда один и тот же скелетон
+  // Use same skeleton until mounted
   if (!mounted) {
     return (
       <section className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm">
