@@ -36,7 +36,7 @@ export default function FuseTour() {
   const [open, setOpen] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
 
-  // авто-показ при первом подключении кошелька
+  // Auto-show on first wallet connection
   useEffect(() => {
     if (!isConnected) {
       setOpen(false);
@@ -53,7 +53,7 @@ export default function FuseTour() {
         return;
       }
     } catch {
-      // если localStorage недоступен — просто покажем тур
+      // ignore localStorage errors, show tour
     }
 
     setStepIndex(0);
@@ -82,19 +82,19 @@ export default function FuseTour() {
         window.localStorage.setItem(TOUR_HIDE_KEY, '1');
       }
     } catch {
-      // ок, если не смогли сохранить флаг
+      // ignore
     }
     setOpen(false);
   };
 
-  // ручной запуск тура по кнопке "?";
+  // Manual trigger via "?" button
   const handleManualOpen = () => {
     try {
       if (typeof window !== 'undefined') {
         window.localStorage.removeItem(TOUR_HIDE_KEY);
       }
     } catch {
-      // если localStorage не доступен — просто продолжаем
+      // ignore
     }
     setStepIndex(0);
     setOpen(true);
@@ -102,7 +102,7 @@ export default function FuseTour() {
 
   return (
     <>
-      {/* ЦЕНТРАЛЬНЫЙ ОВЕРЛЕЙ + ЗАТЕМНЕНИЕ/BLUR ФОНА */}
+      {/* CENTRAL OVERLAY + DIM/BLUR BACKGROUND */}
       <AnimatePresence>
         {open && current && (
           <motion.div
@@ -117,7 +117,7 @@ export default function FuseTour() {
               pointer-events-none
             "
           >
-            {/* затемнение и размытие всего, что позади тура */}
+            {/* Dim and blur everything behind the tour */}
             <div className="pointer-events-none absolute inset-0 bg-black/40 backdrop-blur-sm" />
 
             <motion.div
@@ -148,7 +148,7 @@ export default function FuseTour() {
                     backdrop-blur-xl
                   "
                 >
-                  {/* Верх: мини Орби + заголовок + шаги */}
+                  {/* Top: mini Orbby + title + steps */}
                   <div className="mb-2 flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <div
@@ -184,7 +184,7 @@ export default function FuseTour() {
                     </span>
                   </div>
 
-                  {/* Текст шага */}
+                  {/* Body text */}
                   <AnimatePresence mode="wait">
                     <motion.p
                       key={current.id + '-body'}
@@ -198,7 +198,7 @@ export default function FuseTour() {
                     </motion.p>
                   </AnimatePresence>
 
-                  {/* Прогресс-бар */}
+                  {/* Progress bar */}
                   <div className="mt-3 h-[2px] w-full overflow-hidden rounded-full bg-white/5">
                     <motion.div
                       initial={false}
@@ -208,7 +208,7 @@ export default function FuseTour() {
                     />
                   </div>
 
-                  {/* Кнопки */}
+                  {/* Buttons */}
                   <div className="mt-4 flex items-center justify-between gap-3">
                     <button
                       type="button"
@@ -266,7 +266,7 @@ export default function FuseTour() {
         )}
       </AnimatePresence>
 
-      {/* Кнопка помощи "?" — в правом верхнем углу карточки Create Jar */}
+      {/* Help button "?" - in top right corner of Create Jar card */}
       <button
         type="button"
         onClick={handleManualOpen}
