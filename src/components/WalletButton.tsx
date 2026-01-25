@@ -12,7 +12,7 @@ export default function WalletButton() {
   const { disconnect } = useDisconnect();
 
   if (!mounted) {
-    // стабильная разметка на сервере и до mount
+    // render stable markup on server and before mount
     return (
       <button className="rounded-xl bg-zinc-800 px-4 py-2 text-sm text-zinc-200 opacity-80">
         Connect
