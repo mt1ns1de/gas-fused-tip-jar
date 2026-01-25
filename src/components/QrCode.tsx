@@ -18,7 +18,7 @@ export default function QrCode({ value }: { value: string }) {
     }).catch(() => {});
   }, [value]);
 
-  // глобальный евент на скачивание PNG
+  // global event to download PNG
   useEffect(() => {
     const onDownload = () => {
       const c = canvasRef.current;
