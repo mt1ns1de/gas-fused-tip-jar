@@ -1,7 +1,7 @@
 // src/lib/abiFactory.ts
 /**
- * Берём ABI из ENV (NEXT_PUBLIC_FACTORY_ABI) — одной строкой JSON.
- * Если нет — бросаем ошибку, чтобы не было тихих падений.
+ * Retrieve ABI from ENV (NEXT_PUBLIC_FACTORY_ABI) — as a single JSON line.
+ * If missing, throw an error to avoid silent failures.
  */
 export async function getFactoryAbi(): Promise<any[]> {
   const raw = process.env.NEXT_PUBLIC_FACTORY_ABI;

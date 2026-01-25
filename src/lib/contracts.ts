@@ -8,11 +8,11 @@ export const FACTORY_ADDRESSES: Record<number, Address | undefined> = {
   [baseSepolia.id]: '0x4432b13DABF32b67Bd41472e1350d7E083be6B01' as Address,
 
   // Base Mainnet (Production)
-  // Логика: 1. Пробуем взять из конфига (env). 2. Если там пусто — используем хардкод.
+  // Logic: 1. Try fetching from config (env). 2. If empty — use hardcoded fallback.
   [base.id]: (env.FACTORY_BASE_MAINNET || '0x7CdA207B39F7648AABD5DF98c50f9AeA5f861e38') as Address, 
 }
 
-// ✅ ПРАВИЛЬНЫЙ ABI (соответствует твоему TipJarFactory.sol без прокси)
+// CORRECT ABI (matches your TipJarFactory.sol without proxy)
 export const FACTORY_ABI = [
   {
     type: 'function',
