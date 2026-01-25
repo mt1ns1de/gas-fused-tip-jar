@@ -34,7 +34,7 @@ export default function SharePanel({ jarAddress }: { jarAddress: `0x${string}` }
   }
 
   function onDownloadQR() {
-    // делегируем скачивание самому QrCode через кастомный евент
+    // Delegate download to QrCode component via custom event
     const ev = new CustomEvent('qr:download');
     window.dispatchEvent(ev);
   }
