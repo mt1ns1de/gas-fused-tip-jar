@@ -1,4 +1,3 @@
-// src/components/YourJarsList.tsx
 'use client';
 
 import Link from 'next/link';
@@ -6,12 +5,57 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAccount } from 'wagmi';
 import { normalizeJars, type JarRow } from '@/lib/normalizeJars';
 
+// --- Components ---
+
+// Фирменная синяя галочка (Base Blue)
+function BlueCheckIcon() {
+  return (
+    <svg 
+      width="16" height="16" viewBox="0 0 24 24" 
+      fill="none" stroke="currentColor" strokeWidth="3" 
+      strokeLinecap="round" strokeLinejoin="round" 
+      className="text-[#0052FF]"
+    >
+      <polyline points="20 6 9 17 4 12"></polyline>
+    </svg>
+  );
+}
+
+// Отдельная кнопка копирования для каждой строки (чтобы у каждой был свой стейт)
+function RowCopyButton({ address }: { address: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const onClick = async () => {
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* ignore */ }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center justify-center rounded-md bg-white/10 px-2 py-1 text-xs hover:bg-white/15 min-w-[50px] transition-colors"
+      title="Copy address"
+    >
+      {copied ? <BlueCheckIcon /> : 'Copy'}
+    </button>
+  );
+}
+
+// --- Main Component ---
+
 export default function YourJarsList() {
   const { address } = useAccount();
 
   const [rows, setRows] = useState<JarRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  
+  // Состояние для галочки на кнопке Refresh
+  const [justRefreshed, setJustRefreshed] = useState(false);
 
   // Anti-hydration flag
   const [mounted, setMounted] = useState(false);
@@ -23,6 +67,8 @@ export default function YourJarsList() {
     if (!canQuery) return;
     setLoading(true);
     setErr(null);
+    setJustRefreshed(false);
+    
     try {
       const r = await fetch(`/api/jars?owner=${address}`, { cache: 'no-store' });
       const ctype = r.headers.get('content-type') || '';
@@ -33,6 +79,11 @@ export default function YourJarsList() {
       const j = await r.json();
       if (!r.ok || !j?.ok) throw new Error(String(j?.error || 'Failed to load'));
       setRows(j.rows || []);
+      
+      // Успешно загрузилось — показываем галочку
+      setJustRefreshed(true);
+      setTimeout(() => setJustRefreshed(false), 2000);
+      
     } catch (e: any) {
       setErr(String(e?.message || 'Failed to load'));
     } finally {
@@ -60,14 +111,9 @@ export default function YourJarsList() {
               {r.jar}
             </code>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => navigator.clipboard.writeText(r.jar)}
-                className="rounded-md bg-white/10 px-2 py-1 text-xs hover:bg-white/15"
-                title="Copy address"
-              >
-                Copy
-              </button>
+              {/* UPDATED: Используем компонент кнопки с галочкой */}
+              <RowCopyButton address={r.jar} />
+              
               <a
                 href={`https://basescan.org/address/${r.jar}`}
                 target="_blank"
@@ -138,7 +184,6 @@ export default function YourJarsList() {
     );
   }
 
-  const btnLabel = loading ? 'Refreshing…' : 'Refresh';
   const btnDisabled = loading || !address;
   const count = normalizedRows.length;
 
@@ -151,7 +196,7 @@ export default function YourJarsList() {
           <Empty />
         ) : err ? (
           <ErrorBox text={err} />
-        ) : loading ? (
+        ) : loading && rows.length === 0 ? ( // Показываем скелетон только если нет данных
           <Skeleton />
         ) : count === 0 ? (
           <Empty />
@@ -164,9 +209,16 @@ export default function YourJarsList() {
             type="button"
             onClick={load}
             disabled={btnDisabled}
-            className="rounded-md bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15 disabled:opacity-50"
+            className="inline-flex items-center justify-center rounded-md bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15 disabled:opacity-50 min-w-[70px] transition-all"
           >
-            {btnLabel}
+            {/* UPDATED: Refresh Logic with Blue Check */}
+            {loading ? (
+              '...'
+            ) : justRefreshed ? (
+              <BlueCheckIcon />
+            ) : (
+              'Refresh'
+            )}
           </button>
           {count > 0 && (
             <div className="text-xs text-neutral-400">
