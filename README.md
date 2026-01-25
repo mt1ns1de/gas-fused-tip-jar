@@ -1,6 +1,3 @@
----
-
-```markdown
 # Gas-Fused Tip Jar ⚡️
 
 A sovereign tip jar on Base that respects your gas limits.
