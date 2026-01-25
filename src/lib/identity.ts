@@ -40,7 +40,7 @@ function saveNameCache(cache: NameCache) {
   }
 }
 
-/** Возвращает primary name (.eth или .base.eth) для адреса — либо null */
+/** Returns primary name (.eth or .base.eth) for address — or null */
 export async function getPrimaryName(
   address: `0x${string}`,
 ): Promise<string | null> {
@@ -48,7 +48,7 @@ export async function getPrimaryName(
   const cache = loadNameCache();
   const cached = cache[norm];
 
-  // 10 минут TTL
+  // 10 minutes TTL
   if (cached && Date.now() - cached.ts < 10 * 60_000) {
     return cached.name;
   }
@@ -58,16 +58,16 @@ export async function getPrimaryName(
   try {
     const name = await ensClient.getEnsName({ address });
     if (name) {
-      // доп-проверка: этот name реально резолвится обратно в адрес
+      // Extra check: ensure this name actually resolves back to the address
       try {
         const resolved = await ensClient.getEnsAddress({ name });
         if (resolved && getAddress(resolved).toLowerCase() === norm) {
-          result = name; // это может быть и ENS, и basename вида tilmatochek.base.eth
+          result = name; // This can be ENS or a basename like tilmatochek.base.eth
         } else {
           result = null;
         }
       } catch {
-        // если форвард-резолв сломался, лучше вернуть null, чем неверное имя
+        // If forward resolve fails, better to return null than an incorrect name
         result = null;
       }
     }
@@ -81,7 +81,7 @@ export async function getPrimaryName(
   return result;
 }
 
-/** Возвращает URL аватара ENS/Basenames (если есть) — либо null */
+/** Returns ENS/Basenames avatar URL (if exists) — or null */
 export async function getAvatar(name: string): Promise<string | null> {
   try {
     const url = await ensClient.getEnsAvatar({ name });
