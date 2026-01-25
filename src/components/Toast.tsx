@@ -32,11 +32,11 @@ export default function ToastProvider({ children }: { children: React.ReactNode 
     const id = `t_${Date.now()}_${counter.current++}`;
     const toast: Toast = { id, duration: 3000, ...t };
     setItems((prev) => [...prev, toast]);
-    // автоудаление
+    // auto-remove
     const timer = setTimeout(() => {
       setItems((prev) => prev.filter((x) => x.id !== id));
     }, toast.duration);
-    // небольшой safety: очистка при размонтировании не требуется (локальный таймер).
+    // small safety: cleanup on unmount is not required (local timer).
     return () => clearTimeout(timer);
   }, []);
 
@@ -45,7 +45,7 @@ export default function ToastProvider({ children }: { children: React.ReactNode 
   return (
     <ToastContext.Provider value={value}>
       {children}
-      {/* контейнер тостов */}
+      {/* toast container */}
       <div className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-full max-w-sm flex-col gap-2 p-2">
         {items.map((t) => (
           <div

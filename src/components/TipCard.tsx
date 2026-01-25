@@ -6,14 +6,14 @@ import QrCode from '@/components/QrCode';
 
 type TipCardProps = {
   address: string;
-  onClose?: () => void; // optional close handler (для модалки)
+  onClose?: () => void; // optional close handler (for modal)
 };
 
 export default function TipCard({ address, onClose }: TipCardProps) {
   const [publicUrl, setPublicUrl] = useState('');
   const [copied, setCopied] = useState(false);
 
-  // Собираем ссылку только на клиенте
+  // Construct link only on the client
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setPublicUrl(`${window.location.origin}/jar/${address}`);
@@ -38,7 +38,7 @@ export default function TipCard({ address, onClose }: TipCardProps) {
 
   return (
     <div className="relative mx-auto w-full max-w-sm rounded-2xl border border-white/10 bg-black/40 p-6 text-white backdrop-blur-md">
-      {/* Крестик закрытия — только если передан onClose */}
+      {/* Close button — only if onClose is provided */}
       {onClose && (
         <button
           type="button"
@@ -50,7 +50,7 @@ export default function TipCard({ address, onClose }: TipCardProps) {
         </button>
       )}
 
-      {/* Orbi */}
+      {/* Mascot */}
       <div className="mb-4 mt-2 flex justify-center">
         <Image
           src="/gf-mascot.png"
@@ -69,7 +69,7 @@ export default function TipCard({ address, onClose }: TipCardProps) {
         Scan the code or share the link below.
       </p>
 
-      {/* QR */}
+      {/* QR Code */}
       <div className="flex justify-center">
         <div className="rounded-xl border border-white/10 bg-black/20 p-4">
           {publicUrl ? (
@@ -82,7 +82,7 @@ export default function TipCard({ address, onClose }: TipCardProps) {
         </div>
       </div>
 
-      {/* Адрес (подсказка, что за jar) */}
+      {/* Address (label identifying the jar) */}
       <p
         className="mt-4 text-center text-xs text-neutral-500"
         title={address}
@@ -90,7 +90,7 @@ export default function TipCard({ address, onClose }: TipCardProps) {
         Jar: {shortAddress}
       </p>
 
-      {/* Кнопка Copy */}
+      {/* Copy Button */}
       <button
         type="button"
         onClick={handleCopy}
