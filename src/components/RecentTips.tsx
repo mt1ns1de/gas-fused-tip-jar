@@ -31,12 +31,12 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 700): 
   throw lastErr;
 }
 
-// event Tipped из ABI
+// Tipped event from ABI
 const TIPPED_EVENT = TIPJAR_ABI.find(
   (x) => x.type === 'event' && x.name === 'Tipped',
 ) as AbiEvent | undefined;
 
-// event JarCreated из фабрики (для поиска блока деплоя)
+// JarCreated event from factory (to find deployment block)
 const JAR_CREATED_EVENT = {
   type: 'event',
   name: 'JarCreated',
@@ -47,7 +47,7 @@ const JAR_CREATED_EVENT = {
 } as const as AbiEvent;
 
 export default function RecentTips({ jarAddress }: { jarAddress: `0x${string}` }) {
-  // Жёстко смотрим на Base mainnet (8453), чтобы не зависеть от сети кошелька
+  // Hardcode to Base mainnet (8453) to avoid dependency on wallet network
   const publicClient = usePublicClient({ chainId: 8453 });
 
   const [busy, setBusy] = useState(false);
@@ -55,10 +55,10 @@ export default function RecentTips({ jarAddress }: { jarAddress: `0x${string}` }
   const [tips, setTips] = useState<Tip[]>([]);
   const [usd, setUsd] = useState<number | null>(null);
 
-  // блок, с которого деплойнули эту банку
+  // Block where this jar was deployed
   const [fromBlock, setFromBlock] = useState<bigint | null>(null);
 
-  // Цена ETH в USD
+  // ETH price in USD
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -80,7 +80,7 @@ export default function RecentTips({ jarAddress }: { jarAddress: `0x${string}` }
     };
   }, []);
 
-  // ищем блок деплоя банки по логам фабрики
+  // Find jar deployment block via factory logs
   useEffect(() => {
     if (!publicClient) return;
 
@@ -103,7 +103,7 @@ export default function RecentTips({ jarAddress }: { jarAddress: `0x${string}` }
 
         if (cancelled || !logs.length) return;
 
-        // берём первый лог (самый ранний по умолчанию)
+        // Take the first log (earliest by default)
         const first = logs[0];
         if (first.blockNumber != null) {
           setFromBlock(first.blockNumber);
@@ -133,7 +133,7 @@ export default function RecentTips({ jarAddress }: { jarAddress: `0x${string}` }
     try {
       const latest = await withRetry(() => publicClient.getBlockNumber());
 
-      // если знаем блок деплоя — читаем с него, иначе fallback на "последний миллион блоков"
+      // If we know deployment block - read from it, otherwise fallback to "last million blocks"
       const FALLBACK_SPAN = 1_000_000n;
 
       let from: bigint;
@@ -158,7 +158,7 @@ export default function RecentTips({ jarAddress }: { jarAddress: `0x${string}` }
         .map((l) => {
           const args = l.args as any;
 
-          // Fallback по именам и позициям
+          // Fallback by names and positions
           const fromAddr =
             (args?.from ??
               args?.sender ??
@@ -190,7 +190,7 @@ export default function RecentTips({ jarAddress }: { jarAddress: `0x${string}` }
         })
         .filter(Boolean) as Tip[];
 
-      // свежие сверху
+      // Newest on top
       rows.sort((a, b) => (a.blockNumber > b.blockNumber ? -1 : 1));
       setTips(rows);
     } catch (e: any) {
