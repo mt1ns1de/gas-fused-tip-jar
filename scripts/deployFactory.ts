@@ -16,34 +16,34 @@ const ARTIFACT_PATHS = [
 function findArtifact() {
   for (const p of ARTIFACT_PATHS) {
     if (fs.existsSync(p)) {
-      console.log(`📦 Found artifact: ${p}`);
+      console.log(`Found artifact: ${p}`);
       return JSON.parse(fs.readFileSync(p, 'utf8'));
     }
   }
-  throw new Error('❌ Factory artifact not found — проверь путь.');
+  throw new Error('Factory artifact not found - check the path.');
 }
 
 async function main() {
   const pk = process.env.PRIVATE_KEY;
   const rpc = process.env.RPC_URL_BASE_MAINNET || 'https://mainnet.base.org';
-  if (!pk) throw new Error('❌ PRIVATE_KEY not found in .env');
+  if (!pk) throw new Error('PRIVATE_KEY not found in .env');
 
   const account = privateKeyToAccount(pk as `0x${string}`);
 
-  // 🧱 создаём клиента для отправки транзакции
+  // Create wallet client to dispatch transactions
   const walletClient = createWalletClient({
     account,
     chain: base,
     transport: http(rpc),
   });
 
-  // 👀 создаём клиента для чтения сети (ждём подтверждение)
+  // Create public client to read network state (wait for confirmation)
   const publicClient = createPublicClient({
     chain: base,
     transport: http(rpc),
   });
 
-  console.log(`\n🚀 Deploying TipJarFactory from ${account.address} on Base Mainnet...`);
+  console.log(`\nDeploying TipJarFactory from ${account.address} on Base Mainnet...`);
 
   const artifact = findArtifact();
   const abi = artifact.abi;
@@ -54,23 +54,23 @@ async function main() {
     artifact.evm?.bytecode?.object;
 
   if (!bytecode || bytecode === '0x') {
-    throw new Error('❌ Bytecode not found in artifact.');
+    throw new Error('Bytecode not found in artifact.');
   }
 
-  // 🚀 Отправляем транзакцию
+  // Send deployment transaction
   const hash = await walletClient.deployContract({
     abi,
     bytecode: bytecode as `0x${string}`,
     args: [],
   });
 
-  console.log('⛓️  Tx hash:', hash);
+  console.log('Tx hash:', hash);
 
-  // ⏳ Ждём подтверждения через publicClient
-  console.log('⏳ Waiting for receipt...');
+  // Wait for transaction receipt
+  console.log('Waiting for receipt...');
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   const contractAddress = receipt.contractAddress!;
-  console.log(`✅ Deployed successfully! Address: ${contractAddress}`);
+  console.log(`Deployed successfully! Address: ${contractAddress}`);
 
   const abiOneLine = JSON.stringify(abi);
   console.log('\n=== COPY TO .env.local ===');
