@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useAccount, usePublicClient } from 'wagmi';
 import { formatEther, parseEther } from 'viem';
-import { AnimatePresence, motion } from 'framer-motion'; // <--- ВАЖНО: Добавил импорт для анимации
+import { AnimatePresence, motion } from 'framer-motion';
 
 import CursorAura from '@/components/CursorAura';
 import WalletButton from '@/components/WalletButton';
@@ -13,7 +13,6 @@ import { getPrimaryName } from '@/lib/identity';
 import Avatar from '@/components/Avatar';
 import Slogan from '@/components/Slogan';
 import TipSuccessModal from '@/components/TipSuccessModal';
-// 🔥 Added withdraw modal import
 import WithdrawSuccessModal from '@/components/WithdrawSuccessModal';
 import { withdrawFromJar } from '@/actions/createJar.client';
 
@@ -22,6 +21,22 @@ import { useEthPrice } from '@/hooks/useEthPrice';
 import { useJarOwner } from '@/hooks/useJarOwner';
 import { useJarGasFuse } from '@/hooks/useJarGasFuse';
 import TipCard from '@/components/TipCard';
+
+/* ========================= Icons ========================= */
+
+// Наша фирменная синяя галочка (Base Blue)
+function BlueCheckIcon() {
+  return (
+    <svg 
+      width="16" height="16" viewBox="0 0 24 24" 
+      fill="none" stroke="currentColor" strokeWidth="3" 
+      strokeLinecap="round" strokeLinejoin="round" 
+      className="text-[#0052FF]" // <--- BASE BLUE
+    >
+      <polyline points="20 6 9 17 4 12"></polyline>
+    </svg>
+  );
+}
 
 /* ========================= Utils ========================= */
 
@@ -53,7 +68,7 @@ export default function JarPublicPage() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [lastTx, setLastTx] = useState<string | null>(null);
 
-  // success modal (WITHDRAW) 🔥
+  // success modal (WITHDRAW)
   const [showWithdrawSuccess, setShowWithdrawSuccess] = useState(false);
   const [withdrawTx, setWithdrawTx] = useState<string | undefined>(undefined);
   const [withdrawnAmount, setWithdrawnAmount] = useState<string>('0');
@@ -65,7 +80,7 @@ export default function JarPublicPage() {
   const {
     tips,
     loadingFeed,
-    justRefreshed,
+    justRefreshed, // <--- Используем это для галочки
     refreshIncremental,
     handleRefreshClick,
   } = useJarTips(jar, publicClient as any);
@@ -74,10 +89,27 @@ export default function JarPublicPage() {
   const [nameMap, setNameMap] = useState<Record<string, string | null>>({});
 
   /* ===== Owner panel (hook) ===== */
-  const { owner, jarBalance, refreshOwner } = useJarOwner(
+  const { 
+    owner, 
+    jarBalance, 
+    refreshOwner,
+    // Допустим, в хуке useJarOwner нет флага justRefreshed, 
+    // но мы можем сделать локальный визуальный эффект, если нужно.
+    // Но пока используем простую кнопку.
+  } = useJarOwner(
     jar,
     publicClient as any,
   );
+  
+  // Локальное состояние для галочки владельца
+  const [ownerRefreshed, setOwnerRefreshed] = useState(false);
+
+  const handleOwnerRefresh = async () => {
+    await refreshOwner();
+    setOwnerRefreshed(true);
+    setTimeout(() => setOwnerRefreshed(false), 2000);
+  };
+
   const [withdrawing, setWithdrawing] = useState(false);
   const canWithdraw =
     !!owner && !!address && owner.toLowerCase() === address.toLowerCase();
@@ -166,7 +198,6 @@ export default function JarPublicPage() {
         setMessage('');
         setLastTx(res.txHash || null);
         setShowSuccess(true);
-        // parallel refresh: tips + owner + gas
         void refreshIncremental(true);
         void refreshOwner(true);
         void refreshGas(true);
@@ -235,7 +266,6 @@ export default function JarPublicPage() {
     if (!canWithdraw) return;
     setWithdrawError(null);
 
-    // Capture balance BEFORE transaction (to display in modal)
     const amountToShow = jarBalance
       ? Number(formatEther(jarBalance)).toFixed(6)
       : '0';
@@ -247,11 +277,9 @@ export default function JarPublicPage() {
       if (!res.success) {
         setWithdrawError(res.error || 'Failed to withdraw funds.');
       } else {
-        // 🔥 SUCCESS! Show modal
         setWithdrawnAmount(amountToShow);
         setWithdrawTx(res.txHash);
         setShowWithdrawSuccess(true);
-
         await refreshOwner(true);
       }
     } catch (e: any) {
@@ -260,8 +288,6 @@ export default function JarPublicPage() {
       setWithdrawing(false);
     }
   };
-
-  /* ========================= Refresh tips button handler ========================= */
 
   const onRefreshClick = async () => {
     if (loadingFeed) return;
@@ -303,9 +329,10 @@ export default function JarPublicPage() {
           <button
             type="button"
             onClick={onCopy}
-            className="ml-2 rounded-md bg-white/10 px-2 py-0.5 text-xs hover:bg-white/15"
+            className="ml-2 inline-flex items-center justify-center rounded-md bg-white/10 px-2 py-0.5 text-xs hover:bg-white/15 min-w-[50px]"
           >
-            {copied ? 'Copied ✓' : 'Copy'}
+            {/* UPDATED: Copy Button with Blue Check */}
+            {copied ? <BlueCheckIcon /> : 'Copy'}
           </button>
         </p>
 
@@ -354,7 +381,7 @@ export default function JarPublicPage() {
           </section>
         )}
 
-        {/* === OWNER PANEL (only visible to owner) === */}
+        {/* === OWNER PANEL === */}
         {canWithdraw && (
           <section className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-sm">
             <div className="mb-2 flex items-center gap-2">
@@ -381,11 +408,12 @@ export default function JarPublicPage() {
               <div className="ml-auto flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => refreshOwner()}
-                  className="rounded-md bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15"
+                  onClick={handleOwnerRefresh}
+                  className="inline-flex items-center justify-center rounded-md bg-white/10 px-3 py-1.5 text-sm hover:bg-white/15 min-w-[70px]"
                   disabled={withdrawing}
                 >
-                  Refresh
+                  {/* UPDATED: Refresh Button with Blue Check */}
+                  {ownerRefreshed ? <BlueCheckIcon /> : 'Refresh'}
                 </button>
                 <button
                   type="button"
@@ -491,12 +519,13 @@ export default function JarPublicPage() {
               type="button"
               onClick={onRefreshClick}
               disabled={loadingFeed}
-              className="rounded-md bg-white/10 px-3 py-1.5 text-sm transition-colors hover:bg-white/15 disabled:opacity-60"
+              className="inline-flex items-center justify-center rounded-md bg-white/10 px-3 py-1.5 text-sm transition-colors hover:bg-white/15 disabled:opacity-60 min-w-[70px]"
             >
+              {/* UPDATED: Refresh Button with Blue Check */}
               {loadingFeed
-                ? 'Loading…'
+                ? '...'
                 : justRefreshed
-                ? 'Refreshed'
+                ? <BlueCheckIcon />
                 : 'Refresh'}
             </button>
           </div>
@@ -571,7 +600,7 @@ export default function JarPublicPage() {
         shareLink={publicLink}
       />
 
-      {/* 🔥 Success modal (WITHDRAW) */}
+      {/* Success modal (WITHDRAW) */}
       <WithdrawSuccessModal
         open={showWithdrawSuccess}
         onClose={() => setShowWithdrawSuccess(false)}
