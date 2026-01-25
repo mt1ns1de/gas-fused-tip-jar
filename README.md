@@ -135,7 +135,3 @@ This project is open source and available under the [MIT License](https://www.go
 ## Author
 
 Built with 💙 on Base by **Roman**.
-
-```
-
-```
