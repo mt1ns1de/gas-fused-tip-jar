@@ -22,7 +22,7 @@ export default function YourJar({ jarAddress }: Props) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // State для модалки успеха
+  // Success modal state
   const [showSuccess, setShowSuccess] = useState(false);
   const [withdrawTx, setWithdrawTx] = useState<string | undefined>(undefined);
   const [withdrawnAmount, setWithdrawnAmount] = useState<string>('0');
@@ -99,7 +99,7 @@ export default function YourJar({ jarAddress }: Props) {
     if (!isOwner || pending) return;
     setError(null);
     
-    // Запоминаем сумму ДО вывода, чтобы показать в модалке
+    // Capture amount BEFORE withdraw to show in modal
     const amountToShow = balanceLabel.replace(' ETH', ''); 
 
     try {
@@ -111,12 +111,12 @@ export default function YourJar({ jarAddress }: Props) {
         return;
       }
 
-      // Успех -> показываем модалку
+      // Success -> show modal
       setWithdrawnAmount(amountToShow);
       setWithdrawTx(res.txHash);
       setShowSuccess(true);
 
-      // обновляем баланс (попытка)
+      // update balance (attempt)
       if (publicClient) {
         try {
           const b = await publicClient.getBalance({ address: addr });
@@ -207,7 +207,7 @@ export default function YourJar({ jarAddress }: Props) {
         </div>
       )}
 
-      {/* Модалка вывода */}
+      {/* Withdraw Modal */}
       <WithdrawSuccessModal 
         open={showSuccess}
         onClose={() => setShowSuccess(false)}
