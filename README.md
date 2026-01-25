@@ -1,4 +1,4 @@
-# Gas-Fused Tip Jar ⚡️
+# Gas-Fused Tip Jar 
 
 A sovereign tip jar on Base that respects your gas limits.
 **No backend. No bots. 100% on-chain.**
