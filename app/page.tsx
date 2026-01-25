@@ -335,7 +335,7 @@ export default function Page() {
     };
   }, [mounted, address, publicClient, stats.count]);
 
-  /* ===== Open-a-jar logic ===== */
+  /* ===== Open-a-jar Logic ===== */
 
   const isAddrFormatOk = useMemo(() => isAddress(openInput.trim()), [openInput]);
 
@@ -534,7 +534,7 @@ export default function Page() {
       <aside
         className="
           pointer-events-none
-          fixed right-6 top-28 z-10 hidden w-[320px] lg:block
+          fixed left-1/2 top-28 z-10 hidden w-[320px] -translate-y-0 ml-[26rem] xl:block
         "
       >
         <div className="pointer-events-auto flex flex-col gap-5">

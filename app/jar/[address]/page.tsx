@@ -4,9 +4,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useAccount, usePublicClient } from 'wagmi';
+import { formatEther, parseEther } from 'viem';
+import { AnimatePresence, motion } from 'framer-motion'; // <--- ВАЖНО: Добавил импорт для анимации
+
 import CursorAura from '@/components/CursorAura';
 import WalletButton from '@/components/WalletButton';
-import { formatEther, parseEther } from 'viem';
 import { getPrimaryName } from '@/lib/identity';
 import Avatar from '@/components/Avatar';
 import Slogan from '@/components/Slogan';
@@ -577,12 +579,35 @@ export default function JarPublicPage() {
         txHash={withdrawTx}
       />
 
-      {/* Tip card modal */}
-      {showTipCard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <TipCard address={jar} onClose={() => setShowTipCard(false)} />
-        </div>
-      )}
+      {/* Tip card modal (ANIMATED) */}
+      <AnimatePresence>
+        {showTipCard && (
+          <motion.div
+            key="tip-card-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          >
+            {/* Click outside to close */}
+            <div 
+              className="absolute inset-0" 
+              onClick={() => setShowTipCard(false)} 
+            />
+            
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="relative w-full max-w-sm"
+            >
+              <TipCard address={jar} onClose={() => setShowTipCard(false)} />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 }
