@@ -1,4 +1,3 @@
-// app/layout.tsx
 import './globals.css';
 import type { Metadata } from 'next';
 import Providers from './providers';
@@ -6,6 +5,9 @@ import Providers from './providers';
 export const metadata: Metadata = {
   title: 'Gas-Fused Tip Jar',
   description: 'Send and receive tips with gas protection on Base',
+  other: {
+    'base:app_id': '6977cb2588e3bac59cf3da31',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
