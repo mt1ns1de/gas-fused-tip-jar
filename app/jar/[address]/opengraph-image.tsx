@@ -9,9 +9,16 @@ export const size = {
 };
 export const contentType = 'image/png';
 
-export default async function Image({ params }: { params: { address: string } }) {
-  const jarAddress = params.address;
-  const shortAddr = `${jarAddress.slice(0, 8)}...${jarAddress.slice(-6)}`;
+// В Next.js 15+ params — это Promise
+export default async function Image({ params }: { params: Promise<{ address: string }> }) {
+  // 1. Дожидаемся разрешения параметров
+  const { address } = await params; 
+  
+  // 2. Безопасно сокращаем адрес (fallback на случай ошибки)
+  const jarAddress = address || '0x0000...0000';
+  const shortAddr = jarAddress.length > 10 
+    ? `${jarAddress.slice(0, 8)}...${jarAddress.slice(-6)}`
+    : jarAddress;
 
   return new ImageResponse(
     (
