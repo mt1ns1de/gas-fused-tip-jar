@@ -24,7 +24,7 @@ import TipCard from '@/components/TipCard';
 
 /* ========================= Icons ========================= */
 
-// Наша фирменная синяя галочка (Base Blue)
+// Our signature Base Blue checkmark
 function BlueCheckIcon() {
   return (
     <svg 
@@ -80,7 +80,7 @@ export default function JarPublicPage() {
   const {
     tips,
     loadingFeed,
-    justRefreshed, // <--- Используем это для галочки
+    justRefreshed, // <--- Used for the checkmark
     refreshIncremental,
     handleRefreshClick,
   } = useJarTips(jar, publicClient as any);
@@ -93,15 +93,15 @@ export default function JarPublicPage() {
     owner, 
     jarBalance, 
     refreshOwner,
-    // Допустим, в хуке useJarOwner нет флага justRefreshed, 
-    // но мы можем сделать локальный визуальный эффект, если нужно.
-    // Но пока используем простую кнопку.
+    // Suppose useJarOwner doesn't have a justRefreshed flag,
+    // but we can add a local visual effect if needed.
+    // For now, using a simple button.
   } = useJarOwner(
     jar,
     publicClient as any,
   );
   
-  // Локальное состояние для галочки владельца
+  // Local state for owner checkmark
   const [ownerRefreshed, setOwnerRefreshed] = useState(false);
 
   const handleOwnerRefresh = async () => {

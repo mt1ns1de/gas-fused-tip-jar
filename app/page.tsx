@@ -566,9 +566,20 @@ export default function Page() {
 
           {/* Fuse Tip */}
           <section className="rounded-2xl border border-white/10 bg-white/5 p-5 text-sm text-neutral-300 backdrop-blur-sm shadow-[0_0_20px_rgba(255,255,255,0.05)]">
-            <h3 className="mb-3 text-center text-base font-semibold text-white">
-              Fuse Tip 💡
+            {/* UPDATED HEADER: Flexbox + Solid Blue Icon */}
+            <h3 className="mb-3 flex items-center justify-center gap-2 text-center text-base font-semibold text-white">
+              Fuse Tip
+              <svg 
+                xmlns="http://www.w3.org/2000/svg" 
+                width="20" height="20" 
+                viewBox="0 0 24 24" 
+                fill="currentColor" // Use fill instead of stroke for weight
+                className="text-[#0052FF]" // BASE BLUE
+              >
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" />
+              </svg>
             </h3>
+            
             <div className="min-h-[72px]">
               <AnimatePresence mode="wait">
                 <motion.div
