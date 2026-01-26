@@ -1,0 +1,20 @@
+{
+  "accountAssociation": {
+    "header": "eyJmaWQiOjExMTExMSwidHlwZSI6ImN1c3RvZHkiLCJrZXkiOiIweDExMTExMSJ9",
+    "payload": "eyJkb21haW4iOiJleGFtcGxlLmNvbSJ9",
+    "signature": "MHgxMTExMTE="
+  },
+  "version": "1",
+  "name": "Gas-Fused Tip Jar",
+  "iconUrl": "https://gas-fused-tip-jar-5.vercel.app/icon",
+  "homeUrl": "https://gas-fused-tip-jar-5.vercel.app",
+  "splashImageUrl": "https://gas-fused-tip-jar-5.vercel.app/icon",
+  "splashBackgroundColor": "#0052FF",
+  "primaryCategory": "finance",
+  "tagline": "On-chain gas protection",
+  "description": "Send and receive tips with EVM-level gas protection on Base.",
+  "heroImageUrl": "https://gas-fused-tip-jar-5.vercel.app/opengraph-image",
+  "screenshotUrls": [
+    "https://gas-fused-tip-jar-5.vercel.app/opengraph-image"
+  ]
+}
