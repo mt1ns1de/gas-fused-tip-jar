@@ -27,9 +27,9 @@ export default async function Image({ params }: { params: Promise<{ address: str
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: '#030303', // Чуть светлее чистого черного для глубины
+          backgroundColor: '#030303',
           position: 'relative',
-          border: '4px solid #111', // Рамка, чтобы картинка не терялась в светлом чате
+          border: '4px solid #111',
         }}
       >
         {/* Яркое пятно (Reactor Core) */}
@@ -39,22 +39,21 @@ export default async function Image({ params }: { params: Promise<{ address: str
             top: '50%',
             left: '50%',
             transform: 'translate(-50%, -50%)',
-            width: '800px', // Шире
+            width: '800px',
             height: '800px',
-            // Усилили непрозрачность до 0.4 и добавили второй цвет
             backgroundImage: 'radial-gradient(circle, rgba(0, 82, 255, 0.4) 0%, rgba(0,0,0,0) 70%)',
             filter: 'blur(60px)',
           }}
         />
 
-        {/* Grid pattern (Tech texture) - опционально, но добавляет "инженерности" */}
+        {/* Grid pattern */}
         <div
             style={{
                 position: 'absolute',
                 inset: 0,
                 backgroundImage: 'linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px)',
                 backgroundSize: '40px 40px',
-                maskImage: 'radial-gradient(circle, black 40%, transparent 100%)', // Маска, чтобы сетка была только в центре
+                maskImage: 'radial-gradient(circle, black 40%, transparent 100%)',
             }} 
         />
 
@@ -67,19 +66,19 @@ export default async function Image({ params }: { params: Promise<{ address: str
             zIndex: 10,
           }}
         >
-          {/* Emoji с тенью */}
-          <div style={{ fontSize: 72, marginBottom: 20, textShadow: '0 0 40px rgba(255,200,0,0.6)' }}>⚡️</div>
+          {/* Blue Heart Emoji */}
+          <div style={{ fontSize: 72, marginBottom: 20, textShadow: '0 0 40px rgba(0, 82, 255, 0.6)' }}>💙</div>
 
           <div
             style={{
-              fontSize: 70, // Чуть крупнее
+              fontSize: 70,
               fontWeight: 900,
               color: 'white',
               marginBottom: 10,
               letterSpacing: '-0.03em',
               lineHeight: 1,
               fontFamily: 'sans-serif',
-              textShadow: '0 0 20px rgba(0,0,0,0.8)', // Тень для читаемости на фоне свечения
+              textShadow: '0 0 20px rgba(0,0,0,0.8)',
             }}
           >
             Gas-Fused Tip Jar
@@ -88,7 +87,7 @@ export default async function Image({ params }: { params: Promise<{ address: str
           <div
             style={{
               fontSize: 26,
-              color: '#d1d5db', // Светло-серый, а не темный
+              color: '#d1d5db',
               marginBottom: 50,
               fontFamily: 'sans-serif',
               fontWeight: 500,
@@ -102,15 +101,14 @@ export default async function Image({ params }: { params: Promise<{ address: str
             style={{
               display: 'flex',
               alignItems: 'center',
-              background: 'rgba(0, 0, 0, 0.6)', // Темная подложка
-              border: '2px solid #0052FF', // Яркая граница Base Blue
+              background: 'rgba(0, 0, 0, 0.6)',
+              border: '2px solid #0052FF',
               borderRadius: '12px',
               padding: '16px 40px',
-              color: '#fff', // Белый текст!
+              color: '#fff',
               fontSize: 36,
               fontFamily: 'monospace',
               fontWeight: 700,
-              // Двойное свечение: рамки и самого блока
               boxShadow: '0 0 20px rgba(0, 82, 255, 0.4), inset 0 0 20px rgba(0, 82, 255, 0.1)',
             }}
           >
