@@ -132,6 +132,8 @@ npm run dev
 
 This project is open source and available under the [MIT License](https://www.google.com/search?q=LICENSE).
 
-## Author
+### Author
 
-Built with 💙 on Base by **Roman**.
+Built with 💙 on Base by [Roman](https://www.linkedin.com/in/tilmatochek/).
+
+*DM me for collaboration.*
