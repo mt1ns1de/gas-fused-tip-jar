@@ -1,6 +1,5 @@
 import { ImageResponse } from 'next/og';
 
-// Настройка метаданных картинки
 export const runtime = 'edge';
 export const alt = 'Gas-Fused Tip Jar on Base';
 export const size = {
@@ -9,20 +8,17 @@ export const size = {
 };
 export const contentType = 'image/png';
 
-// В Next.js 15+ params — это Promise
 export default async function Image({ params }: { params: Promise<{ address: string }> }) {
-  // 1. Дожидаемся разрешения параметров
-  const { address } = await params; 
+  const { address } = await params;
   
-  // 2. Безопасно сокращаем адрес (fallback на случай ошибки)
+  // Fallback и форматирование
   const jarAddress = address || '0x0000...0000';
   const shortAddr = jarAddress.length > 10 
-    ? `${jarAddress.slice(0, 8)}...${jarAddress.slice(-6)}`
+    ? `${jarAddress.slice(0, 6)}...${jarAddress.slice(-4)}`
     : jarAddress;
 
   return new ImageResponse(
     (
-      // Контейнер (Background)
       <div
         style={{
           height: '100%',
@@ -31,25 +27,37 @@ export default async function Image({ params }: { params: Promise<{ address: str
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: '#000000',
+          backgroundColor: '#030303', // Чуть светлее чистого черного для глубины
           position: 'relative',
+          border: '4px solid #111', // Рамка, чтобы картинка не терялась в светлом чате
         }}
       >
-        {/* Blue Glow Effect (Identity) */}
+        {/* Яркое пятно (Reactor Core) */}
         <div
           style={{
             position: 'absolute',
             top: '50%',
             left: '50%',
             transform: 'translate(-50%, -50%)',
-            width: '600px',
-            height: '600px',
-            backgroundImage: 'radial-gradient(circle, rgba(0, 82, 255, 0.25) 0%, transparent 70%)',
-            filter: 'blur(40px)',
+            width: '800px', // Шире
+            height: '800px',
+            // Усилили непрозрачность до 0.4 и добавили второй цвет
+            backgroundImage: 'radial-gradient(circle, rgba(0, 82, 255, 0.4) 0%, rgba(0,0,0,0) 70%)',
+            filter: 'blur(60px)',
           }}
         />
 
-        {/* Content Wrapper */}
+        {/* Grid pattern (Tech texture) - опционально, но добавляет "инженерности" */}
+        <div
+            style={{
+                position: 'absolute',
+                inset: 0,
+                backgroundImage: 'linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px)',
+                backgroundSize: '40px 40px',
+                maskImage: 'radial-gradient(circle, black 40%, transparent 100%)', // Маска, чтобы сетка была только в центре
+            }} 
+        />
+
         <div
           style={{
             display: 'flex',
@@ -59,69 +67,84 @@ export default async function Image({ params }: { params: Promise<{ address: str
             zIndex: 10,
           }}
         >
-          {/* Icon / Emoji */}
-          <div style={{ fontSize: 64, marginBottom: 24 }}>⚡️</div>
+          {/* Emoji с тенью */}
+          <div style={{ fontSize: 72, marginBottom: 20, textShadow: '0 0 40px rgba(255,200,0,0.6)' }}>⚡️</div>
 
-          {/* Title */}
           <div
             style={{
-              fontSize: 64,
+              fontSize: 70, // Чуть крупнее
               fontWeight: 900,
               color: 'white',
-              marginBottom: 16,
-              letterSpacing: '-0.02em',
+              marginBottom: 10,
+              letterSpacing: '-0.03em',
+              lineHeight: 1,
               fontFamily: 'sans-serif',
+              textShadow: '0 0 20px rgba(0,0,0,0.8)', // Тень для читаемости на фоне свечения
             }}
           >
             Gas-Fused Tip Jar
           </div>
 
-          {/* Subtitle */}
           <div
             style={{
-              fontSize: 28,
-              color: '#A0A0A0',
-              marginBottom: 40,
+              fontSize: 26,
+              color: '#d1d5db', // Светло-серый, а не темный
+              marginBottom: 50,
               fontFamily: 'sans-serif',
+              fontWeight: 500,
             }}
           >
-            Direct EVM protection. No backend. No bots.
+            Sovereign protection. 100% On-chain.
           </div>
 
-          {/* Address Box (Code style) */}
+          {/* NEON Address Box */}
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
-              background: 'rgba(255, 255, 255, 0.1)',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '16px',
-              padding: '16px 32px',
-              color: '#0052FF', // Base Blue text
-              fontSize: 32,
+              background: 'rgba(0, 0, 0, 0.6)', // Темная подложка
+              border: '2px solid #0052FF', // Яркая граница Base Blue
+              borderRadius: '12px',
+              padding: '16px 40px',
+              color: '#fff', // Белый текст!
+              fontSize: 36,
               fontFamily: 'monospace',
-              fontWeight: 600,
-              boxShadow: '0 0 30px rgba(0, 82, 255, 0.15)',
+              fontWeight: 700,
+              // Двойное свечение: рамки и самого блока
+              boxShadow: '0 0 20px rgba(0, 82, 255, 0.4), inset 0 0 20px rgba(0, 82, 255, 0.1)',
             }}
           >
             {shortAddr}
           </div>
         </div>
 
-        {/* Base Logo Text (Bottom) */}
+        {/* Footer */}
         <div
           style={{
             position: 'absolute',
-            bottom: 40,
-            fontSize: 20,
-            color: '#444',
-            fontFamily: 'sans-serif',
-            fontWeight: 600,
-            textTransform: 'uppercase',
-            letterSpacing: '0.1em',
+            bottom: 30,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
           }}
         >
-          Built on BASE
+           <div style={{
+               height: 8,
+               width: 8,
+               borderRadius: '50%',
+               background: '#0052FF',
+               boxShadow: '0 0 10px #0052FF'
+           }}/>
+           <div style={{
+            fontSize: 18,
+            color: '#888',
+            fontFamily: 'sans-serif',
+            fontWeight: 600,
+            letterSpacing: '0.15em',
+            textTransform: 'uppercase',
+          }}>
+            Powered by Base
+          </div>
         </div>
       </div>
     ),
